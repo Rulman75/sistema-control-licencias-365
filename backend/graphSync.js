@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const {
   getFullState,
+  invalidateStateCache,
   readLocalStore,
   writeLocalStore,
   getPool,
@@ -1048,8 +1049,9 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
       });
     }
 
+    invalidateStateCache();
     const durationMs = Date.now() - startTime;
-    const summaryText = `Sincronizados ${totalUsuariosDominiosCmds} usuarios M365: ${usuariosNuevos} nuevos, ${altasLicencia} altas de licencia, ${bajasLicencia} bajas de licencia, ${aliasActualizados} alias actualizados.`;
+    const summaryText = `Sincronizados ${totalUsuariosDominiosCmds} usuarios M365: ${usuariosNuevos} nuevos, ${altasLicencia} altas de licencia, ${bajasLicencia} bajas de licencia, ${aliasActualizados} alias actualizados${usuariosDepurados > 0 ? `, ${usuariosDepurados} cuentas inexistentes en M365 depuradas` : ''}.`;
 
     return {
       status: 'ok',

@@ -79,8 +79,21 @@ export default function ReportesMovimientos() {
     }
   };
 
-  const totalPages = Math.max(1, Math.ceil(movimientos.length / PAGE_SIZE));
-  const movimientosPaginados = movimientos.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const movimientosFiltrados = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return movimientos;
+    return movimientos.filter(
+      (m) =>
+        (m.usuario_email && m.usuario_email.toLowerCase().includes(q)) ||
+        (m.usuario_nombre && m.usuario_nombre.toLowerCase().includes(q)) ||
+        (m.establecimiento_nombre && m.establecimiento_nombre.toLowerCase().includes(q)) ||
+        (m.motivo && m.motivo.toLowerCase().includes(q)) ||
+        (m.ticket_referencia && m.ticket_referencia.toLowerCase().includes(q))
+    );
+  }, [movimientos, search]);
+
+  const totalPages = Math.max(1, Math.ceil(movimientosFiltrados.length / PAGE_SIZE));
+  const movimientosPaginados = movimientosFiltrados.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="space-y-5">

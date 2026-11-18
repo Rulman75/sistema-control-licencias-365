@@ -366,10 +366,17 @@ let memoryStoreCache = null;
 let diskWritePending = false;
 let pgStateCache = null;
 let pgStateCacheTime = 0;
+let pgSyncInFlightPromise = null;
+let stateVersion = 1;
 
 function invalidateStateCache() {
   pgStateCache = null;
   pgStateCacheTime = 0;
+  stateVersion++;
+}
+
+function getStateVersion() {
+  return stateVersion;
 }
 
 function readLocalStore() {
@@ -404,16 +411,16 @@ function writeLocalStore(data) {
   invalidateStateCache();
   if (diskWritePending) return;
   diskWritePending = true;
-  setTimeout(() => {
+  setTimeout(async () => {
     diskWritePending = false;
     try {
       const tmpPath = `${STORE_PATH}.tmp`;
-      fs.writeFileSync(tmpPath, JSON.stringify(memoryStoreCache), 'utf8');
-      fs.renameSync(tmpPath, STORE_PATH);
+      await fs.promises.writeFile(tmpPath, JSON.stringify(memoryStoreCache), 'utf8');
+      await fs.promises.rename(tmpPath, STORE_PATH);
     } catch (e) {
       console.warn('[DB] Advertencia escribiendo store local:', e.message);
     }
-  }, 50).unref();
+  }, 150).unref();
 }
 
 // ============================================================================
@@ -806,7 +813,7 @@ async function syncPgToLocal(clientOrPool) {
   memoryStoreCache = synced;
   pgStateCache = synced;
   pgStateCacheTime = now;
-  if (now - lastStoreWriteTime > 15000) {
+  if (now - lastStoreWriteTime > 60000) {
     lastStoreWriteTime = now;
     const tmpPath = `${STORE_PATH}.tmp`;
     fs.promises
@@ -819,11 +826,17 @@ async function syncPgToLocal(clientOrPool) {
 
 async function getFullState(forceRefresh = false) {
   if (pgAvailable && pgPool) {
-    if (!forceRefresh && pgStateCache && Date.now() - pgStateCacheTime < 1500) {
+    if (!forceRefresh && pgStateCache && Date.now() - pgStateCacheTime < 60000) {
       return pgStateCache;
     }
+    if (pgSyncInFlightPromise) {
+      return pgSyncInFlightPromise;
+    }
+    pgSyncInFlightPromise = syncPgToLocal(pgPool).finally(() => {
+      pgSyncInFlightPromise = null;
+    });
     try {
-      return await syncPgToLocal(pgPool);
+      return await pgSyncInFlightPromise;
     } catch (e) {
       console.warn('[DB] Fallo lectura PG, usando store local:', e.message);
     }
@@ -855,6 +868,7 @@ module.exports = {
   initDatabase,
   getFullState,
   invalidateStateCache,
+  getStateVersion,
   readLocalStore,
   writeLocalStore,
   getDbStatus,

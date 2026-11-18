@@ -14,6 +14,7 @@ const {
   initDatabase,
   getFullState,
   invalidateStateCache,
+  getStateVersion,
   readLocalStore,
   writeLocalStore,
   getDbStatus,
@@ -925,86 +926,122 @@ app.put('/api/licencias/cupos/:id', requireAuth, requireSystemAdmin, async (req,
 // ============================================================================
 // ENDPOINTS DE USUARIOS MICROSOFT 365 Y ASIGNACIÓN DE LICENCIAS (/api/usuarios/*)
 // ============================================================================
+let usuariosMemCache = {
+  version: -1,
+  enrichedUsers: [],
+  allJsonStr: '',
+  allGzipBuf: null
+};
+
 app.get('/api/usuarios', requireAuth, async (req, res) => {
   try {
     const state = await getFullState();
-    const {
-      dominios,
-      tipos_licencia,
-      cupos_licencia,
-      establecimientos,
-      usuarios_m365,
-      asignaciones_licencia
-    } = state;
-
+    const curVer = getStateVersion();
     const { search, dominio_id, tipo_licencia_id, establecimiento_id, sector, estado_cuenta, tipo_usuario, tipo_cuenta } = req.query;
+    const hasFilters = Boolean(
+      search || dominio_id || tipo_licencia_id || establecimiento_id || sector || estado_cuenta || tipo_usuario || tipo_cuenta
+    );
+    const acceptEnc = String(req.headers['accept-encoding'] || '');
 
-    const domById = new Map(dominios.map(d => [d.id, d]));
-    const estById = new Map(establecimientos.map(e => [e.id, e]));
-    const cupoById = new Map(cupos_licencia.map(c => [c.id, c]));
-    const tipoById = new Map(tipos_licencia.map(t => [t.id, t]));
+    if (usuariosMemCache.version !== curVer) {
+      const {
+        dominios,
+        tipos_licencia,
+        cupos_licencia,
+        establecimientos,
+        usuarios_m365,
+        asignaciones_licencia
+      } = state;
 
-    const asigsByUserId = new Map();
-    for (const a of asignaciones_licencia) {
-      if (!asigsByUserId.has(a.usuario_id)) {
-        asigsByUserId.set(a.usuario_id, []);
+      const domById = new Map(dominios.map(d => [d.id, d]));
+      const estById = new Map(establecimientos.map(e => [e.id, e]));
+      const cupoById = new Map(cupos_licencia.map(c => [c.id, c]));
+      const tipoById = new Map(tipos_licencia.map(t => [t.id, t]));
+
+      const asigsByUserId = new Map();
+      for (const a of asignaciones_licencia) {
+        if (!asigsByUserId.has(a.usuario_id)) {
+          asigsByUserId.set(a.usuario_id, []);
+        }
+        const cupo = cupoById.get(a.cupo_licencia_id) || {};
+        const tipo = tipoById.get(cupo.tipo_licencia_id) || {};
+        asigsByUserId.get(a.usuario_id).push({
+          id: a.id,
+          cupo_licencia_id: a.cupo_licencia_id,
+          tipo_licencia_id: cupo.tipo_licencia_id,
+          estado: a.estado,
+          licencia_nombre: tipo.nombre,
+          incluye_teams: tipo.incluye_teams,
+          color_hex: tipo.color_hex,
+          fecha_alta: a.fecha_alta,
+          fecha_baja: a.fecha_baja,
+          motivo_baja: a.motivo_baja,
+          numero_ticket: a.numero_ticket,
+          asignado_por: a.asignado_por
+        });
       }
-      const cupo = cupoById.get(a.cupo_licencia_id) || {};
-      const tipo = tipoById.get(cupo.tipo_licencia_id) || {};
-      asigsByUserId.get(a.usuario_id).push({
-        id: a.id,
-        cupo_licencia_id: a.cupo_licencia_id,
-        tipo_licencia_id: cupo.tipo_licencia_id,
-        estado: a.estado,
-        licencia_nombre: tipo.nombre,
-        incluye_teams: tipo.incluye_teams,
-        color_hex: tipo.color_hex,
-        fecha_alta: a.fecha_alta,
-        fecha_baja: a.fecha_baja,
-        motivo_baja: a.motivo_baja,
-        numero_ticket: a.numero_ticket,
-        asignado_por: a.asignado_por
+
+      const enrichedUsers = usuarios_m365.map(u => {
+        const dom = domById.get(u.dominio_id) || {};
+        const est = estById.get(u.establecimiento_id) || null;
+        const misAsignaciones = asigsByUserId.get(u.id) || [];
+        const licenciasActivas = misAsignaciones.filter(a => a.estado === 'ACTIVA');
+
+        const tipoCuentaNorm = u.tipo_cuenta || (u.tipo_usuario === 'MAQUINA' ? 'MAQUINA' : 'PERSONA');
+        const item = {
+          id: u.id,
+          rut: u.rut || '',
+          nombres: u.nombres,
+          apellidos: u.apellidos,
+          nombre_completo: u.nombre_completo,
+          email: u.email,
+          email_alias: u.email_alias || '',
+          m365_object_id: u.m365_object_id || '',
+          dominio_id: u.dominio_id,
+          establecimiento_id: u.establecimiento_id,
+          cargo: u.cargo || '',
+          departamento: u.departamento || '',
+          tipo_cuenta: tipoCuentaNorm,
+          tipo_usuario: u.tipo_usuario,
+          estado_cuenta: u.estado_cuenta,
+          dominio: dom.dominio,
+          dominio_sector: dom.sector,
+          establecimiento_nombre: est ? est.nombre : 'Sin Establecimiento',
+          licencias_activas: licenciasActivas
+        };
+        if (misAsignaciones.length > licenciasActivas.length) {
+          item.historial_asignaciones = misAsignaciones;
+        }
+        return item;
       });
+
+      const allJsonStr = JSON.stringify({
+        usuarios: enrichedUsers,
+        total: enrichedUsers.length
+      });
+      const allGzipBuf = zlib.gzipSync(Buffer.from(allJsonStr, 'utf8'));
+
+      usuariosMemCache = {
+        version: curVer,
+        enrichedUsers,
+        allJsonStr,
+        allGzipBuf
+      };
     }
 
-    const enrichedUsers = usuarios_m365.map(u => {
-      const dom = domById.get(u.dominio_id) || {};
-      const est = estById.get(u.establecimiento_id) || null;
-      const misAsignaciones = asigsByUserId.get(u.id) || [];
-      const licenciasActivas = misAsignaciones.filter(a => a.estado === 'ACTIVA');
-
-      const tipoCuentaNorm = u.tipo_cuenta || (u.tipo_usuario === 'MAQUINA' ? 'MAQUINA' : 'PERSONA');
-      const item = {
-        id: u.id,
-        rut: u.rut || '',
-        nombres: u.nombres,
-        apellidos: u.apellidos,
-        nombre_completo: u.nombre_completo,
-        email: u.email,
-        email_alias: u.email_alias || '',
-        m365_object_id: u.m365_object_id || '',
-        dominio_id: u.dominio_id,
-        establecimiento_id: u.establecimiento_id,
-        cargo: u.cargo || '',
-        departamento: u.departamento || '',
-        tipo_cuenta: tipoCuentaNorm,
-        tipo_usuario: u.tipo_usuario,
-        estado_cuenta: u.estado_cuenta,
-        dominio: dom.dominio,
-        dominio_sector: dom.sector,
-        establecimiento_nombre: est ? est.nombre : 'Sin Establecimiento',
-        licencias_activas: licenciasActivas
-      };
-      if (misAsignaciones.length > licenciasActivas.length) {
-        item.historial_asignaciones = misAsignaciones;
+    if (!hasFilters) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      if (acceptEnc.includes('gzip') && usuariosMemCache.allGzipBuf) {
+        res.setHeader('Content-Encoding', 'gzip');
+        return res.send(usuariosMemCache.allGzipBuf);
       }
-      return item;
-    });
+      return res.send(usuariosMemCache.allJsonStr);
+    }
 
-    const filtered = enrichedUsers.filter(u => {
+    const filtered = usuariosMemCache.enrichedUsers.filter(u => {
       if (dominio_id && Number(dominio_id) !== u.dominio_id) return false;
       if (establecimiento_id && Number(establecimiento_id) !== u.establecimiento_id) return false;
-      if (sector && u.dominio_sector !== sector && u.establecimiento_sector !== sector) return false;
+      if (sector && u.dominio_sector !== sector) return false;
       if (estado_cuenta && u.estado_cuenta !== estado_cuenta) return false;
       if (tipo_cuenta && u.tipo_cuenta !== tipo_cuenta) return false;
       if (tipo_usuario && u.tipo_usuario !== tipo_usuario) return false;
@@ -1036,7 +1073,6 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
       usuarios: filtered,
       total: filtered.length
     });
-    const acceptEnc = String(req.headers['accept-encoding'] || '');
     if (acceptEnc.includes('gzip')) {
       zlib.gzip(Buffer.from(payloadStr, 'utf8'), (err, compressed) => {
         if (err) {
@@ -1763,52 +1799,96 @@ app.post('/api/usuarios/:id/cambiar-licencia', requireAuth, requireWriteAccess, 
 // ============================================================================
 // ENDPOINTS DE REPORTES DE ALTAS Y BAJAS (/api/movimientos)
 // ============================================================================
+let movimientosMemCache = {
+  version: -1,
+  allJsonStr: '',
+  allGzipBuf: null
+};
+
 app.get('/api/movimientos', requireAuth, async (req, res) => {
   try {
     const state = await getFullState();
+    const curVer = getStateVersion();
     const { tipo_movimiento, dominio, licencia, fecha_desde, fecha_hasta, search } = req.query;
+    const hasFilters = Boolean(tipo_movimiento || dominio || licencia || fecha_desde || fecha_hasta || search);
+    const acceptEnc = String(req.headers['accept-encoding'] || '');
 
-    const filtered = state.movimientos_licencia.filter(m => {
-      if (tipo_movimiento && m.tipo_movimiento !== tipo_movimiento) return false;
-      if (dominio && m.dominio_nombre !== dominio) return false;
-      if (licencia && m.licencia_nombre !== licencia) return false;
-      if (fecha_desde) {
-        const dMov = new Date(m.fecha_movimiento);
-        const dDesde = new Date(`${fecha_desde}T00:00:00`);
-        if (dMov < dDesde) return false;
+    if (!hasFilters && movimientosMemCache.version === curVer && movimientosMemCache.allJsonStr) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      if (acceptEnc.includes('gzip') && movimientosMemCache.allGzipBuf) {
+        res.setHeader('Content-Encoding', 'gzip');
+        return res.send(movimientosMemCache.allGzipBuf);
       }
-      if (fecha_hasta) {
-        const dMov = new Date(m.fecha_movimiento);
-        const dHasta = new Date(`${fecha_hasta}T23:59:59`);
-        if (dMov > dHasta) return false;
+      return res.send(movimientosMemCache.allJsonStr);
+    }
+
+    const dDesde = fecha_desde ? new Date(`${fecha_desde}T00:00:00`).getTime() : null;
+    const dHasta = fecha_hasta ? new Date(`${fecha_hasta}T23:59:59`).getTime() : null;
+    const q = search && String(search).trim() !== '' ? String(search).trim().toLowerCase() : '';
+
+    let totalAltas = 0;
+    let totalBajas = 0;
+    let totalAjustes = 0;
+    let totalMatch = 0;
+    const sliced = [];
+    const MAX_UI_MOVIMIENTOS = 1000;
+
+    for (const m of state.movimientos_licencia) {
+      if (tipo_movimiento && m.tipo_movimiento !== tipo_movimiento) continue;
+      if (dominio && m.dominio_nombre !== dominio) continue;
+      if (licencia && m.licencia_nombre !== licencia) continue;
+      if (dDesde || dHasta) {
+        const tMov = new Date(m.fecha_movimiento).getTime();
+        if (dDesde && tMov < dDesde) continue;
+        if (dHasta && tMov > dHasta) continue;
       }
-      if (search && String(search).trim() !== '') {
-        const q = String(search).trim().toLowerCase();
+      if (q) {
         const match =
           (m.usuario_email && m.usuario_email.toLowerCase().includes(q)) ||
           (m.usuario_nombre && m.usuario_nombre.toLowerCase().includes(q)) ||
           (m.establecimiento_nombre && m.establecimiento_nombre.toLowerCase().includes(q)) ||
           (m.motivo && m.motivo.toLowerCase().includes(q)) ||
           (m.ticket_referencia && m.ticket_referencia.toLowerCase().includes(q));
-        if (!match) return false;
+        if (!match) continue;
       }
-      return true;
-    });
 
-    const totalAltas = filtered.filter(m => m.tipo_movimiento === 'ALTA' || m.tipo_movimiento === 'CARGA_MASIVA').length;
-    const totalBajas = filtered.filter(m => m.tipo_movimiento === 'BAJA').length;
-    const totalAjustes = filtered.filter(m => m.tipo_movimiento === 'AJUSTE_CUPO').length;
+      totalMatch++;
+      if (m.tipo_movimiento === 'ALTA' || m.tipo_movimiento === 'CARGA_MASIVA') totalAltas++;
+      else if (m.tipo_movimiento === 'BAJA') totalBajas++;
+      else if (m.tipo_movimiento === 'AJUSTE_CUPO') totalAjustes++;
 
-    res.json({
-      movimientos: filtered,
+      if (sliced.length < MAX_UI_MOVIMIENTOS) {
+        sliced.push(m);
+      }
+    }
+
+    const payloadStr = JSON.stringify({
+      movimientos: sliced,
       resumen: {
-        total_registros: filtered.length,
+        total_registros: totalMatch,
         altas: totalAltas,
         bajas: totalBajas,
         ajustes: totalAjustes,
         balance_neto: totalAltas - totalBajas
       }
     });
+
+    const gzipBuf = zlib.gzipSync(Buffer.from(payloadStr, 'utf8'));
+
+    if (!hasFilters) {
+      movimientosMemCache = {
+        version: curVer,
+        allJsonStr: payloadStr,
+        allGzipBuf: gzipBuf
+      };
+    }
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    if (acceptEnc.includes('gzip')) {
+      res.setHeader('Content-Encoding', 'gzip');
+      return res.send(gzipBuf);
+    }
+    res.send(payloadStr);
   } catch (err) {
     console.error('[MOVIMIENTOS ERROR]:', err);
     res.status(500).json({ error: 'Error consultando bitácora de altas y bajas.' });

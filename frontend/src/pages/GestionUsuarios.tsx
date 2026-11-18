@@ -286,46 +286,53 @@ export default function GestionUsuarios() {
       )
     : establecimientos;
 
-  // Filtrado instantáneo en tiempo real mientras se digita o cambia cualquier selector
-  const usuariosFiltrados = usuarios.filter((u) => {
-    if (filtroDominio && String(u.dominio_id) !== String(filtroDominio)) return false;
-    if (filtroEstablecimiento && String(u.establecimiento_id) !== String(filtroEstablecimiento)) return false;
-    if (filtroEstado && u.estado_cuenta !== filtroEstado) return false;
-    if (filtroTipoUsuario) {
-      const esMaq = u.tipo_cuenta === 'MAQUINA' || u.tipo_usuario === 'MAQUINA';
-      if (filtroTipoUsuario === 'PERSONA_TODAS') {
-        if (esMaq) return false;
-      } else if (filtroTipoUsuario === 'MAQUINA') {
-        if (!esMaq) return false;
-      } else if (u.tipo_usuario !== filtroTipoUsuario) {
-        return false;
+  // Filtrado instantáneo en tiempo real memorizado (useMemo) para 12.000+ registros
+  const { usuariosFiltrados, sinLicenciaCount } = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const targetLicId = filtroTipoLic && filtroTipoLic !== 'SIN_LICENCIA' ? Number(filtroTipoLic) : null;
+    const list: any[] = [];
+    let sinLic = 0;
+
+    for (let i = 0; i < usuarios.length; i++) {
+      const u = usuarios[i];
+      if (filtroDominio && String(u.dominio_id) !== String(filtroDominio)) continue;
+      if (filtroEstablecimiento && String(u.establecimiento_id) !== String(filtroEstablecimiento)) continue;
+      if (filtroEstado && u.estado_cuenta !== filtroEstado) continue;
+      if (filtroTipoUsuario) {
+        const esMaq = u.tipo_cuenta === 'MAQUINA' || u.tipo_usuario === 'MAQUINA';
+        if (filtroTipoUsuario === 'PERSONA_TODAS') {
+          if (esMaq) continue;
+        } else if (filtroTipoUsuario === 'MAQUINA') {
+          if (!esMaq) continue;
+        } else if (u.tipo_usuario !== filtroTipoUsuario) {
+          continue;
+        }
       }
-    }
-    if (filtroTipoLic) {
-      if (filtroTipoLic === 'SIN_LICENCIA') {
-        if (u.licencias_activas && u.licencias_activas.length > 0) return false;
-      } else {
-        const targetId = Number(filtroTipoLic);
-        const hasLic = (u.licencias_activas || []).some(
-          (la: any) => Number(la.tipo_licencia_id) === targetId
-        );
-        if (!hasLic) return false;
+      const hasAnyLic = u.licencias_activas && u.licencias_activas.length > 0;
+      if (filtroTipoLic) {
+        if (filtroTipoLic === 'SIN_LICENCIA') {
+          if (hasAnyLic) continue;
+        } else if (targetLicId !== null) {
+          const hasLic = hasAnyLic && u.licencias_activas.some((la: any) => Number(la.tipo_licencia_id) === targetLicId);
+          if (!hasLic) continue;
+        }
       }
+      if (q !== '') {
+        const match =
+          (u.nombre_completo && u.nombre_completo.toLowerCase().includes(q)) ||
+          (u.email && u.email.toLowerCase().includes(q)) ||
+          (u.email_alias && u.email_alias.toLowerCase().includes(q)) ||
+          (u.rut && u.rut.toLowerCase().includes(q)) ||
+          (u.cargo && u.cargo.toLowerCase().includes(q)) ||
+          (u.departamento && u.departamento.toLowerCase().includes(q)) ||
+          (u.establecimiento_nombre && u.establecimiento_nombre.toLowerCase().includes(q));
+        if (!match) continue;
+      }
+      if (!hasAnyLic) sinLic++;
+      list.push(u);
     }
-    if (search.trim() !== '') {
-      const q = search.trim().toLowerCase();
-      const match =
-        (u.nombre_completo && u.nombre_completo.toLowerCase().includes(q)) ||
-        (u.email && u.email.toLowerCase().includes(q)) ||
-        (u.email_alias && u.email_alias.toLowerCase().includes(q)) ||
-        (u.rut && u.rut.toLowerCase().includes(q)) ||
-        (u.cargo && u.cargo.toLowerCase().includes(q)) ||
-        (u.departamento && u.departamento.toLowerCase().includes(q)) ||
-        (u.establecimiento_nombre && u.establecimiento_nombre.toLowerCase().includes(q));
-      if (!match) return false;
-    }
-    return true;
-  });
+    return { usuariosFiltrados: list, sinLicenciaCount: sinLic };
+  }, [usuarios, filtroDominio, filtroEstablecimiento, filtroEstado, filtroTipoUsuario, filtroTipoLic, search]);
 
   const totalPages = Math.max(1, Math.ceil(usuariosFiltrados.length / PAGE_SIZE));
   const usuariosPaginados = usuariosFiltrados.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -570,7 +577,7 @@ export default function GestionUsuarios() {
                 onClick={() => handleSelectPageOrFiltered('SIN_LICENCIA_FILTRADOS')}
                 className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 font-bold text-[11px] hover:bg-amber-100 cursor-pointer"
               >
-                Seleccionar sin licencia ({usuariosFiltrados.filter((u) => !u.licencias_activas || u.licencias_activas.length === 0).length})
+                Seleccionar sin licencia ({sinLicenciaCount.toLocaleString('es-CL')})
               </button>
             )}
             {selectedUserIds.length > 0 && !isReadOnly && (
