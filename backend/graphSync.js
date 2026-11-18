@@ -256,7 +256,8 @@ async function getSyncHistory(limit = 20) {
       return [];
     }
   }
-  return [];
+  const store = readLocalStore();
+  return Array.isArray(store.historial_sync_m365) ? store.historial_sync_m365.slice(0, limit) : [];
 }
 
 // ============================================================================
@@ -761,6 +762,202 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
       } finally {
         client.release();
       }
+    } else {
+      // Modo LOCAL_SYNC (store.json en servidor Linux DMZ cuando PG no está en alcance directo)
+      const store = readLocalStore();
+      let nextUserId = store.usuarios_m365.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
+      let nextAsigId = store.asignaciones_licencia.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
+      let nextMovId = store.movimientos_licencia.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
+      const localUserByEmail = new Map(store.usuarios_m365.map(u => [u.email.toLowerCase(), u]));
+      const localActiveAsigsByUser = new Map();
+      for (const a of store.asignaciones_licencia) {
+        if (a.estado !== 'ACTIVA') continue;
+        if (!localActiveAsigsByUser.has(a.usuario_id)) localActiveAsigsByUser.set(a.usuario_id, []);
+        localActiveAsigsByUser.get(a.usuario_id).push(a);
+      }
+
+      for (const gu of graphUsers) {
+        const upn = String(gu.userPrincipalName || '').trim().toLowerCase();
+        if (!upn.includes('@')) continue;
+
+        const domainStr = upn.split('@')[1];
+        const domObj = domByName.get(domainStr);
+        if (!domObj) continue;
+
+        totalUsuariosDominiosCmds++;
+
+        const displayName = String(gu.displayName || '').trim();
+        const givenName = String(gu.givenName || '').trim();
+        const surname = String(gu.surname || '').trim();
+        const fullName =
+          displayName ||
+          [givenName, surname].filter(Boolean).join(' ') ||
+          upn.split('@')[0].replace(/[._-]/g, ' ');
+        const split = splitFullName(fullName, upn);
+        const nombres = givenName || split.nombres;
+        const apellidos = surname || split.apellidos;
+        const alias = extractSecondaryAlias(upn, gu.mail, gu.proxyAddresses);
+        const estadoCuenta = gu.accountEnabled === false ? 'BAJA' : 'ACTIVO';
+
+        const assignedRawSkus = (gu.assignedLicenses || [])
+          .map(al => skuPartById.get(String(al.skuId || '').toLowerCase()) || '')
+          .filter(Boolean);
+
+        const clasificacion = clasificarCuentaM365({
+          nombreCompleto: fullName,
+          email: upn,
+          dominio: domainStr,
+          rawLicencia: assignedRawSkus.join(' + '),
+          skuHint: assignedRawSkus.map(mapGraphSkuToInternalCode).filter(Boolean)[0] || null
+        });
+
+        const targetCupoIds = new Set();
+        for (const rawSkuPart of assignedRawSkus) {
+          let internalCode = mapGraphSkuToInternalCode(rawSkuPart);
+          if (!internalCode) continue;
+          if (domainStr === 'cmds-educacion.cl' && clasificacion.tipo_cuenta === 'MAQUINA') {
+            internalCode = 'O365_A3_STUDENT';
+          }
+          const tipoLic = tipoByCode.get(internalCode);
+          if (!tipoLic) continue;
+          let cupo = cupoByDomAndTipo.get(`${domObj.id}_${tipoLic.id}`);
+          if (!cupo) cupo = store.cupos_licencia.find(c => c.tipo_licencia_id === tipoLic.id);
+          if (cupo) targetCupoIds.add(cupo.id);
+        }
+
+        let dbUser = localUserByEmail.get(upn);
+        if (!dbUser) {
+          const rawUnitHint = [gu.officeLocation, gu.department, gu.companyName].filter(Boolean).join(' ');
+          const estId = resolveEstablecimientoId(rawUnitHint, domObj.sector, store.establecimientos);
+          dbUser = {
+            id: nextUserId++,
+            rut: '',
+            nombres,
+            apellidos,
+            nombre_completo: fullName,
+            email: upn,
+            email_alias: alias,
+            m365_object_id: gu.id || '',
+            dominio_id: domObj.id,
+            establecimiento_id: estId,
+            cargo: gu.jobTitle || (clasificacion.tipo_cuenta === 'MAQUINA' ? 'Equipo / Laboratorio' : 'Funcionario CMDS'),
+            departamento: gu.department || domObj.nombre,
+            tipo_cuenta: clasificacion.tipo_cuenta,
+            tipo_usuario: clasificacion.tipo_usuario,
+            estado_cuenta: estadoCuenta,
+            created_at: nowIso,
+            updated_at: nowIso
+          };
+          store.usuarios_m365.unshift(dbUser);
+          localUserByEmail.set(upn, dbUser);
+          usuariosNuevos++;
+          if (alias) aliasActualizados++;
+        } else {
+          const newAlias = alias || dbUser.email_alias || '';
+          const aliasChanged = newAlias !== (dbUser.email_alias || '');
+          const statusChanged = estadoCuenta !== dbUser.estado_cuenta;
+          if (aliasChanged || statusChanged) {
+            dbUser.email_alias = newAlias;
+            dbUser.estado_cuenta = estadoCuenta;
+            dbUser.m365_object_id = gu.id || dbUser.m365_object_id || '';
+            dbUser.updated_at = nowIso;
+            if (aliasChanged && alias) aliasActualizados++;
+            usuariosActualizados++;
+          }
+        }
+
+        const currentActiveAsigs = localActiveAsigsByUser.get(dbUser.id) || [];
+        const currentCupoIds = new Set(currentActiveAsigs.map(a => a.cupo_licencia_id));
+        const est = estById.get(dbUser.establecimiento_id);
+
+        for (const targetCupoId of targetCupoIds) {
+          if (!currentCupoIds.has(targetCupoId)) {
+            const cupo = cupoById.get(targetCupoId) || {};
+            const tipo = tipoById.get(cupo.tipo_licencia_id) || {};
+            const glosaAlta = 'Asignación detectada automáticamente en Centro de Administración Microsoft 365';
+            store.asignaciones_licencia.unshift({
+              id: nextAsigId++,
+              usuario_id: dbUser.id,
+              cupo_licencia_id: targetCupoId,
+              estado: 'ACTIVA',
+              numero_ticket: 'SYNC-M365-AUTO',
+              asignado_por: operatorUsername,
+              observaciones: glosaAlta,
+              fecha_alta: nowIso,
+              fecha_baja: null,
+              motivo_baja: null
+            });
+            store.movimientos_licencia.unshift({
+              id: nextMovId++,
+              tipo_movimiento: 'ALTA',
+              usuario_id: dbUser.id,
+              usuario_email: dbUser.email,
+              usuario_nombre: dbUser.nombre_completo,
+              cupo_licencia_id: targetCupoId,
+              dominio_nombre: domObj.dominio,
+              licencia_nombre: tipo.nombre || 'Licencia Microsoft 365',
+              establecimiento_nombre: est ? est.nombre : 'SIN ESTABLECIMIENTO',
+              motivo: glosaAlta,
+              ticket_referencia: 'SYNC-M365-AUTO',
+              ejecutado_por: operatorUsername,
+              fecha_movimiento: nowIso
+            });
+            altasLicencia++;
+          }
+        }
+
+        for (const activeAsig of currentActiveAsigs) {
+          if (!targetCupoIds.has(activeAsig.cupo_licencia_id)) {
+            const cupo = cupoById.get(activeAsig.cupo_licencia_id) || {};
+            const tipo = tipoById.get(cupo.tipo_licencia_id) || {};
+            const glosaBaja = 'Licencia desasignada en Centro de Administración Microsoft 365 (Sincronización Automática)';
+            activeAsig.estado = 'REVOCADA';
+            activeAsig.fecha_baja = nowIso;
+            activeAsig.motivo_baja = glosaBaja;
+            store.movimientos_licencia.unshift({
+              id: nextMovId++,
+              tipo_movimiento: 'BAJA',
+              usuario_id: dbUser.id,
+              usuario_email: dbUser.email,
+              usuario_nombre: dbUser.nombre_completo,
+              cupo_licencia_id: activeAsig.cupo_licencia_id,
+              dominio_nombre: domObj.dominio,
+              licencia_nombre: tipo.nombre || 'Licencia Microsoft 365',
+              establecimiento_nombre: est ? est.nombre : 'SIN ESTABLECIMIENTO',
+              motivo: glosaBaja,
+              ticket_referencia: 'SYNC-M365-BAJA',
+              ejecutado_por: operatorUsername,
+              fecha_movimiento: nowIso
+            });
+            bajasLicencia++;
+          }
+        }
+      }
+
+      const durationMs = Date.now() - startTime;
+      const summaryText = `Sincronizados ${totalUsuariosDominiosCmds} usuarios M365: ${usuariosNuevos} nuevos, ${altasLicencia} altas de licencia, ${bajasLicencia} bajas de licencia, ${aliasActualizados} alias actualizados (${durationMs} ms).`;
+      if (!Array.isArray(store.historial_sync_m365)) store.historial_sync_m365 = [];
+      store.historial_sync_m365.unshift({
+        id: store.historial_sync_m365.length + 1,
+        fecha: nowIso,
+        origen: trigger,
+        estado: 'OK',
+        duracion_ms: durationMs,
+        total_usuarios_graph: totalUsuariosDominiosCmds,
+        usuarios_nuevos: usuariosNuevos,
+        usuarios_actualizados: usuariosActualizados,
+        altas_licencia: altasLicencia,
+        bajas_licencia: bajasLicencia,
+        alias_actualizados: aliasActualizados,
+        detalle: summaryText,
+        ejecutado_por: operatorUsername
+      });
+      writeLocalStore(store);
+      await saveSyncConfig({
+        last_sync_at: nowIso,
+        last_sync_status: 'OK',
+        last_sync_summary: summaryText
+      });
     }
 
     const durationMs = Date.now() - startTime;
