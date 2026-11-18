@@ -1,0 +1,14 @@
+{
+  "name": "sistema-control-licencias-365",
+  "version": "1.0.0",
+  "description": "Sistema Corporativo de Control y Administración de Licencias Microsoft 365 — CMDS Antofagasta",
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "node backend/server.js",
+    "dev:backend": "node backend/server.js",
+    "dev:frontend": "cd frontend && npm run dev"
+  },
+  "author": "Unidad de Tecnologías de la Información (TI) — CMDS Antofagasta",
+  "license": "ISC"
+}
