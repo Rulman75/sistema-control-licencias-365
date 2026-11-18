@@ -32,6 +32,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [filtroDominio, setFiltroDominio] = useState<string>('TODOS');
   const [incluirEstudiantesGrafico, setIncluirEstudiantesGrafico] = useState(false);
+  const [syncingM365, setSyncingM365] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const fetchDashboard = async () => {
     setLoading(true);
@@ -42,6 +44,26 @@ export default function Dashboard() {
       console.error('Error cargando dashboard:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSyncM365FromDashboard = async () => {
+    setSyncingM365(true);
+    setSyncNotice(null);
+    try {
+      const res = await api.post('/m365-sync/run');
+      setSyncNotice({
+        type: 'ok',
+        text: res.data.message || 'Sincronización con Microsoft 365 completada.'
+      });
+      await fetchDashboard();
+    } catch (err: any) {
+      setSyncNotice({
+        type: 'err',
+        text: err.response?.data?.error || 'Error sincronizando con Microsoft 365.'
+      });
+    } finally {
+      setSyncingM365(false);
     }
   };
 
@@ -111,6 +133,17 @@ export default function Dashboard() {
         <div className="flex flex-wrap items-center gap-2 no-print">
           <button
             type="button"
+            onClick={handleSyncM365FromDashboard}
+            disabled={syncingM365}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#39BABD] hover:bg-teal-600 text-white text-xs font-extrabold shadow cursor-pointer"
+            title="Sincronizar altas, bajas y alias en vivo desde admin.cloud.microsoft"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-white ${syncingM365 ? 'animate-spin' : ''}`} />
+            <span>{syncingM365 ? 'Sincronizando M365...' : 'Sincronizar con M365'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={fetchDashboard}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer"
             title="Actualizar contadores"
@@ -129,6 +162,25 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {syncNotice && (
+        <div
+          className={`p-3.5 rounded-xl text-xs font-bold border flex items-center justify-between ${
+            syncNotice.type === 'ok'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <span>{syncNotice.text}</span>
+          <button
+            type="button"
+            onClick={() => setSyncNotice(null)}
+            className="underline ml-4 cursor-pointer"
+          >
+            Cerrar
+          </button>
+        </div>
+      )}
 
       {/* 4 Tarjetas Superiores Limpias y Directas (Sin duplicar datos ni textos amarillos) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

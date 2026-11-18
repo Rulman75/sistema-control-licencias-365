@@ -22,6 +22,14 @@ const {
   parseWorkbookToNormalizedUsers,
   bulkImportNormalizedUsers
 } = require('./excelParser');
+const {
+  getSyncConfig,
+  saveSyncConfig,
+  getSyncHistory,
+  testGraphConnection,
+  runMicrosoft365Sync,
+  startAutoSyncScheduler
+} = require('./graphSync');
 
 const app = express();
 app.disable('x-powered-by');
@@ -2545,6 +2553,108 @@ app.get('/api/import-export/exportar-movimientos', requireAuth, async (req, res)
 });
 
 // ============================================================================
+// ENDPOINTS DE SINCRONIZACIÓN AUTOMÁTICA CON MICROSOFT 365 (GRAPH API / ENTRA ID)
+// ============================================================================
+app.get('/api/m365-sync/status', requireAuth, async (req, res) => {
+  try {
+    const [config, historial] = await Promise.all([
+      getSyncConfig(),
+      getSyncHistory(20)
+    ]);
+
+    res.json({
+      config: {
+        tenant_id: config.tenant_id || '',
+        client_id: config.client_id || '',
+        thumbprint_sha1: config.thumbprint_sha1 || '',
+        has_certificate: Boolean(config.cert_pem && config.private_key_pem),
+        auto_sync_enabled: Boolean(config.auto_sync_enabled),
+        interval_minutes: Number(config.interval_minutes || 15),
+        last_sync_at: config.last_sync_at || null,
+        last_sync_status: config.last_sync_status || 'PENDIENTE',
+        last_sync_summary: config.last_sync_summary || ''
+      },
+      historial
+    });
+  } catch (err) {
+    console.error('[M365 SYNC STATUS ERROR]:', err);
+    res.status(500).json({ error: 'Error consultando estado de sincronización Microsoft 365.' });
+  }
+});
+
+app.get('/api/m365-sync/certificado', requireAuth, requireSystemAdmin, async (req, res) => {
+  try {
+    const config = await getSyncConfig();
+    if (!config.cert_pem) {
+      return res.status(404).json({ error: 'Certificado X.509 no disponible.' });
+    }
+    res.setHeader('Content-Disposition', 'attachment; filename="CMDS_M365_Graph_Certificado.cer"');
+    res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+    res.send(config.cert_pem);
+  } catch (err) {
+    res.status(500).json({ error: 'Error descargando el certificado X.509.' });
+  }
+});
+
+app.post('/api/m365-sync/config', requireAuth, requireSystemAdmin, async (req, res) => {
+  try {
+    const { tenant_id, client_id, auto_sync_enabled, interval_minutes } = req.body;
+    const saved = await saveSyncConfig({
+      tenant_id,
+      client_id,
+      auto_sync_enabled,
+      interval_minutes
+    });
+    res.json({
+      status: 'ok',
+      message: 'Configuración de sincronización Microsoft 365 guardada exitosamente.',
+      config: {
+        tenant_id: saved.tenant_id,
+        client_id: saved.client_id,
+        thumbprint_sha1: saved.thumbprint_sha1,
+        has_certificate: Boolean(saved.cert_pem && saved.private_key_pem),
+        auto_sync_enabled: saved.auto_sync_enabled,
+        interval_minutes: saved.interval_minutes
+      }
+    });
+  } catch (err) {
+    console.error('[M365 SYNC CONFIG ERROR]:', err);
+    res.status(500).json({ error: 'Error guardando configuración de sincronización.' });
+  }
+});
+
+app.post('/api/m365-sync/test', requireAuth, requireWriteAccess, async (req, res) => {
+  try {
+    const result = await testGraphConnection();
+    res.json({
+      status: 'ok',
+      ...result
+    });
+  } catch (err) {
+    res.status(400).json({
+      status: 'error',
+      error: err.message || 'No fue posible conectar con Microsoft Graph.'
+    });
+  }
+});
+
+app.post('/api/m365-sync/run', requireAuth, requireWriteAccess, async (req, res) => {
+  try {
+    const result = await runMicrosoft365Sync({
+      trigger: 'MANUAL_UI',
+      operatorUsername: req.user.username
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('[M365 SYNC RUN ERROR]:', err);
+    res.status(400).json({
+      status: 'error',
+      error: err.message || 'Error ejecutando la sincronización con Microsoft 365.'
+    });
+  }
+});
+
+// ============================================================================
 // SERVIR FRONTEND COMPILADO EN PRODUCCIÓN
 // ============================================================================
 const publicDir = path.join(__dirname, 'public');
@@ -2571,6 +2681,7 @@ if (fs.existsSync(publicDir)) {
 
 // Iniciar BD y levantar servidor
 initDatabase().then(() => {
+  startAutoSyncScheduler();
   app.listen(PORT, () => {
     console.log(`====================================================================`);
     console.log(`  CMDS — Sistema de Control de Licencias Microsoft 365`);

@@ -617,6 +617,40 @@ async function initDatabase() {
         );
         ALTER TABLE usuarios_m365 ADD COLUMN IF NOT EXISTS email_alias VARCHAR(220) DEFAULT '';
         ALTER TABLE usuarios_m365 ADD COLUMN IF NOT EXISTS tipo_cuenta VARCHAR(30) DEFAULT 'PERSONA';
+        ALTER TABLE usuarios_m365 ADD COLUMN IF NOT EXISTS m365_object_id VARCHAR(100) DEFAULT '';
+
+        CREATE TABLE IF NOT EXISTS config_m365_sync (
+          id INTEGER PRIMARY KEY DEFAULT 1,
+          tenant_id VARCHAR(120) DEFAULT '',
+          client_id VARCHAR(120) DEFAULT '',
+          client_secret TEXT DEFAULT '',
+          thumbprint_sha1 VARCHAR(120) DEFAULT '',
+          x5t VARCHAR(120) DEFAULT '',
+          cert_pem TEXT DEFAULT '',
+          private_key_pem TEXT DEFAULT '',
+          auto_sync_enabled BOOLEAN DEFAULT TRUE,
+          interval_minutes INTEGER DEFAULT 15,
+          last_sync_at TIMESTAMP,
+          last_sync_status VARCHAR(40) DEFAULT 'PENDIENTE',
+          last_sync_summary TEXT DEFAULT '',
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS historial_sync_m365 (
+          id SERIAL PRIMARY KEY,
+          fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          origen VARCHAR(50) DEFAULT 'MANUAL',
+          estado VARCHAR(30) DEFAULT 'OK',
+          duracion_ms INTEGER DEFAULT 0,
+          total_usuarios_graph INTEGER DEFAULT 0,
+          usuarios_nuevos INTEGER DEFAULT 0,
+          usuarios_actualizados INTEGER DEFAULT 0,
+          altas_licencia INTEGER DEFAULT 0,
+          bajas_licencia INTEGER DEFAULT 0,
+          alias_actualizados INTEGER DEFAULT 0,
+          detalle TEXT DEFAULT '',
+          ejecutado_por VARCHAR(150) DEFAULT 'SYSTEM'
+        );
 
         CREATE TABLE IF NOT EXISTS asignaciones_licencia (
           id SERIAL PRIMARY KEY,
@@ -766,6 +800,36 @@ async function initDatabase() {
         `DELETE FROM usuarios_sistema WHERE LOWER(username) = ANY($1)`,
         [Array.from(REMOVED_DEMO_SYSTEM_USERS)]
       );
+
+      // Sembrar o actualizar configuración inicial de Microsoft Graph (Entra ID) si existe m365_cert.json
+      const certFilePath = path.join(DATA_DIR, 'm365_cert.json');
+      if (fs.existsSync(certFilePath)) {
+        try {
+          const certData = JSON.parse(fs.readFileSync(certFilePath, 'utf8'));
+          await client.query(
+            `INSERT INTO config_m365_sync
+              (id, tenant_id, client_id, thumbprint_sha1, x5t, cert_pem, private_key_pem, auto_sync_enabled, interval_minutes)
+             VALUES (1, $1, $2, $3, $4, $5, $6, TRUE, 15)
+             ON CONFLICT (id) DO UPDATE SET
+               tenant_id = COALESCE(NULLIF(config_m365_sync.tenant_id, ''), EXCLUDED.tenant_id),
+               client_id = COALESCE(NULLIF(config_m365_sync.client_id, ''), EXCLUDED.client_id),
+               thumbprint_sha1 = COALESCE(NULLIF(config_m365_sync.thumbprint_sha1, ''), EXCLUDED.thumbprint_sha1),
+               x5t = COALESCE(NULLIF(config_m365_sync.x5t, ''), EXCLUDED.x5t),
+               cert_pem = COALESCE(NULLIF(config_m365_sync.cert_pem, ''), EXCLUDED.cert_pem),
+               private_key_pem = COALESCE(NULLIF(config_m365_sync.private_key_pem, ''), EXCLUDED.private_key_pem)`,
+            [
+              certData.tenant_id || '95f4d8b5-b14f-45b1-9463-f6dff68ff1c6',
+              certData.client_id || '791d04cf-ce04-4eb7-b572-e6f6e55e6b94',
+              certData.thumbprint_sha1 || '',
+              certData.x5t || '',
+              certData.cert_pem || '',
+              certData.private_key_pem || ''
+            ]
+          );
+        } catch (e) {
+          console.warn('[DB] Advertencia cargando m365_cert.json:', e.message);
+        }
+      }
 
       // Sincronizar store local desde PostgreSQL para mantener espejo actualizado
       await syncPgToLocal(pgPool);
