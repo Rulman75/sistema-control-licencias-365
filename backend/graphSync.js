@@ -419,9 +419,11 @@ function mapGraphSkuToInternalCode(skuPartNumber) {
   }
   // Office 365 A3 Student
   if (
+    up.includes('STUUSEBNFT') ||
     up.includes('A3_STU') ||
     up.includes('A3_STUDENT') ||
     up === 'M365EDU_A3_STUUSEBNFT' ||
+    up === 'ENTERPRISEPACKPLUS_STUUSEBNFT' ||
     up === 'ENTERPRISEPACKPLUS_STUDENT' ||
     up === 'STANDARDWOFFPACK_STUDENT' ||
     up === 'STANDARDWOFFPACK_IW_STUDENT'
