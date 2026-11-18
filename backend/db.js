@@ -351,7 +351,7 @@ function buildInitialDemoData() {
 }
 
 // ============================================================================
-// LECTURA / ESCRITURA STORE LOCAL DE RESPALDO
+// LECTURA / ESCRITURA STORE LOCAL DE RESPALDO (CON CACHÉ EN MEMORIA Y ESCRITURA ATÓMICA)
 // ============================================================================
 const REMOVED_DEMO_SYSTEM_USERS = new Set([
   'admin.central@cmds.cl',
@@ -362,38 +362,58 @@ const REMOVED_DEMO_SYSTEM_USERS = new Set([
   'consulta.educacion@cmds-educacion.cl'
 ]);
 
+let memoryStoreCache = null;
+let diskWritePending = false;
+let pgStateCache = null;
+let pgStateCacheTime = 0;
+
+function invalidateStateCache() {
+  pgStateCache = null;
+  pgStateCacheTime = 0;
+}
+
 function readLocalStore() {
+  if (memoryStoreCache) {
+    return memoryStoreCache;
+  }
   try {
     if (fs.existsSync(STORE_PATH)) {
       const raw = fs.readFileSync(STORE_PATH, 'utf8');
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.dominios) && Array.isArray(parsed.cupos_licencia)) {
         if (Array.isArray(parsed.usuarios_sistema)) {
-          const prevLen = parsed.usuarios_sistema.length;
           parsed.usuarios_sistema = parsed.usuarios_sistema.filter(
             u => !REMOVED_DEMO_SYSTEM_USERS.has(String(u.username || '').toLowerCase())
           );
-          if (parsed.usuarios_sistema.length !== prevLen) {
-            writeLocalStore(parsed);
-          }
         }
-        return parsed;
+        memoryStoreCache = parsed;
+        return memoryStoreCache;
       }
     }
   } catch (e) {
-    console.warn('[DB] Advertencia leyendo store local:', e.message);
+    console.warn('[DB] Advertencia leyendo store local, regenerando estructura base:', e.message);
   }
   const initial = buildInitialDemoData();
+  memoryStoreCache = initial;
   writeLocalStore(initial);
-  return initial;
+  return memoryStoreCache;
 }
 
 function writeLocalStore(data) {
-  try {
-    fs.writeFileSync(STORE_PATH, JSON.stringify(data, null, 2), 'utf8');
-  } catch (e) {
-    console.warn('[DB] Advertencia escribiendo store local:', e.message);
-  }
+  memoryStoreCache = data;
+  invalidateStateCache();
+  if (diskWritePending) return;
+  diskWritePending = true;
+  setTimeout(() => {
+    diskWritePending = false;
+    try {
+      const tmpPath = `${STORE_PATH}.tmp`;
+      fs.writeFileSync(tmpPath, JSON.stringify(memoryStoreCache), 'utf8');
+      fs.renameSync(tmpPath, STORE_PATH);
+    } catch (e) {
+      console.warn('[DB] Advertencia escribiendo store local:', e.message);
+    }
+  }, 50).unref();
 }
 
 // ============================================================================
@@ -783,15 +803,25 @@ async function syncPgToLocal(clientOrPool) {
   };
 
   const now = Date.now();
-  if (now - lastStoreWriteTime > 10000) {
+  memoryStoreCache = synced;
+  pgStateCache = synced;
+  pgStateCacheTime = now;
+  if (now - lastStoreWriteTime > 15000) {
     lastStoreWriteTime = now;
-    fs.promises.writeFile(STORE_PATH, JSON.stringify(synced, null, 2), 'utf8').catch(() => {});
+    const tmpPath = `${STORE_PATH}.tmp`;
+    fs.promises
+      .writeFile(tmpPath, JSON.stringify(synced), 'utf8')
+      .then(() => fs.promises.rename(tmpPath, STORE_PATH))
+      .catch(() => {});
   }
   return synced;
 }
 
-async function getFullState() {
+async function getFullState(forceRefresh = false) {
   if (pgAvailable && pgPool) {
+    if (!forceRefresh && pgStateCache && Date.now() - pgStateCacheTime < 1500) {
+      return pgStateCache;
+    }
     try {
       return await syncPgToLocal(pgPool);
     } catch (e) {
@@ -799,12 +829,15 @@ async function getFullState() {
     }
   }
   const store = readLocalStore();
-  // Recalcular contadores en modo local
+  const activeCountByCupo = new Map();
+  for (const a of store.asignaciones_licencia) {
+    if (a.estado === 'ACTIVA') {
+      activeCountByCupo.set(a.cupo_licencia_id, (activeCountByCupo.get(a.cupo_licencia_id) || 0) + 1);
+    }
+  }
   store.cupos_licencia = store.cupos_licencia.map(c => ({
     ...c,
-    licencias_asignadas: store.asignaciones_licencia.filter(
-      a => a.cupo_licencia_id === c.id && a.estado === 'ACTIVA'
-    ).length
+    licencias_asignadas: activeCountByCupo.get(c.id) || 0
   }));
   return store;
 }
@@ -821,6 +854,7 @@ function getDbStatus() {
 module.exports = {
   initDatabase,
   getFullState,
+  invalidateStateCache,
   readLocalStore,
   writeLocalStore,
   getDbStatus,

@@ -1625,12 +1625,12 @@ export default function GestionUsuarios() {
             </div>
 
             <div className="p-6 space-y-3 max-h-96 overflow-y-auto">
-              {(modalHistorialUser.historial_asignaciones || []).length === 0 ? (
+              {(modalHistorialUser.historial_asignaciones || modalHistorialUser.licencias_activas || []).length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-6">
                   Este usuario no registra asignaciones históricas de licencias.
                 </p>
               ) : (
-                modalHistorialUser.historial_asignaciones.map((h: any) => (
+                (modalHistorialUser.historial_asignaciones || modalHistorialUser.licencias_activas || []).map((h: any) => (
                   <div
                     key={h.id}
                     className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-start justify-between gap-3 text-xs"

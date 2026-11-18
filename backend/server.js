@@ -1,4 +1,5 @@
 const fs = require('fs');
+const zlib = require('zlib');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -12,6 +13,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const {
   initDatabase,
   getFullState,
+  invalidateStateCache,
   readLocalStore,
   writeLocalStore,
   getDbStatus,
@@ -122,7 +124,13 @@ const apiIpLimiter = createIpRateLimiter(
   'Límite de solicitudes por minuto excedido desde su dirección IP. Intente nuevamente en unos segundos.'
 );
 
-app.use('/api', apiIpLimiter);
+app.use('/api', apiIpLimiter, (req, res, next) => {
+  if (req.method !== 'GET') {
+    invalidateStateCache();
+    res.on('finish', () => invalidateStateCache());
+  }
+  next();
+});
 
 // ============================================================================
 // UTILIDADES DE SEGURIDAD Y CONTRASEÑAS FUERTES
@@ -943,16 +951,19 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
       }
       const cupo = cupoById.get(a.cupo_licencia_id) || {};
       const tipo = tipoById.get(cupo.tipo_licencia_id) || {};
-      const domCupo = domById.get(cupo.dominio_id) || {};
       asigsByUserId.get(a.usuario_id).push({
-        ...a,
+        id: a.id,
+        cupo_licencia_id: a.cupo_licencia_id,
         tipo_licencia_id: cupo.tipo_licencia_id,
+        estado: a.estado,
         licencia_nombre: tipo.nombre,
-        codigo_sku: tipo.codigo_sku,
-        categoria: tipo.categoria,
         incluye_teams: tipo.incluye_teams,
         color_hex: tipo.color_hex,
-        dominio_licencia: domCupo.dominio
+        fecha_alta: a.fecha_alta,
+        fecha_baja: a.fecha_baja,
+        motivo_baja: a.motivo_baja,
+        numero_ticket: a.numero_ticket,
+        asignado_por: a.asignado_por
       });
     }
 
@@ -963,17 +974,31 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
       const licenciasActivas = misAsignaciones.filter(a => a.estado === 'ACTIVA');
 
       const tipoCuentaNorm = u.tipo_cuenta || (u.tipo_usuario === 'MAQUINA' ? 'MAQUINA' : 'PERSONA');
-      return {
-        ...u,
+      const item = {
+        id: u.id,
+        rut: u.rut || '',
+        nombres: u.nombres,
+        apellidos: u.apellidos,
+        nombre_completo: u.nombre_completo,
+        email: u.email,
+        email_alias: u.email_alias || '',
+        m365_object_id: u.m365_object_id || '',
+        dominio_id: u.dominio_id,
+        establecimiento_id: u.establecimiento_id,
+        cargo: u.cargo || '',
+        departamento: u.departamento || '',
         tipo_cuenta: tipoCuentaNorm,
+        tipo_usuario: u.tipo_usuario,
+        estado_cuenta: u.estado_cuenta,
         dominio: dom.dominio,
         dominio_sector: dom.sector,
         establecimiento_nombre: est ? est.nombre : 'Sin Establecimiento',
-        establecimiento_codigo: est ? est.codigo_unidad : null,
-        establecimiento_sector: est ? est.sector : dom.sector,
-        licencias_activas: licenciasActivas,
-        historial_asignaciones: misAsignaciones
+        licencias_activas: licenciasActivas
       };
+      if (misAsignaciones.length > licenciasActivas.length) {
+        item.historial_asignaciones = misAsignaciones;
+      }
+      return item;
     });
 
     const filtered = enrichedUsers.filter(u => {
@@ -1007,10 +1032,25 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
       return true;
     });
 
-    res.json({
+    const payloadStr = JSON.stringify({
       usuarios: filtered,
       total: filtered.length
     });
+    const acceptEnc = String(req.headers['accept-encoding'] || '');
+    if (acceptEnc.includes('gzip')) {
+      zlib.gzip(Buffer.from(payloadStr, 'utf8'), (err, compressed) => {
+        if (err) {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          return res.send(payloadStr);
+        }
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Encoding', 'gzip');
+        res.send(compressed);
+      });
+    } else {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.send(payloadStr);
+    }
   } catch (err) {
     console.error('[GET USUARIOS ERROR]:', err);
     res.status(500).json({ error: 'Error obteniendo listado de usuarios Microsoft 365.' });
