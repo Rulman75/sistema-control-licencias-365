@@ -316,128 +316,16 @@ function buildInitialDemoData() {
     }
   ];
 
-  // Usuarios M365 iniciales representativos de los 3 dominios y 6 pools
-  const findEstId = (codigo) => {
-    const found = INITIAL_ESTABLECIMIENTOS.find(e => e.codigo_unidad === codigo);
-    return found ? found.id : 1;
-  };
-
-  const usuarios_m365 = [
-    // cmds.cl (Pool 1: Office 365 E3)
-    { id: 1, rut: '12.345.678-9', nombres: 'Rodrigo', apellidos: 'Hormazábal Figueroa', nombre_completo: 'Rodrigo Hormazábal Figueroa', email: 'rhormazabal@cmds.cl', dominio_id: 1, establecimiento_id: findEstId(377), cargo: 'Jefe Departamento de Informática', departamento: 'Informática', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-08-10T09:00:00.000Z', updated_at: '2026-08-10T09:00:00.000Z' },
-    { id: 2, rut: '14.567.890-1', nombres: 'María', apellidos: 'Tapia Cortés', nombre_completo: 'María Tapia Cortés', email: 'mtapia@cmds.cl', dominio_id: 1, establecimiento_id: findEstId(301), cargo: 'Secretaria General Ejecutiva', departamento: 'Dirección Ejecutiva', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-08-12T10:00:00.000Z', updated_at: '2026-08-12T10:00:00.000Z' },
-    { id: 3, rut: '11.222.333-4', nombres: 'Carlos', apellidos: 'Mondaca Valdés', nombre_completo: 'Carlos Mondaca Valdés', email: 'cmondaca@cmds.cl', dominio_id: 1, establecimiento_id: findEstId(350), cargo: 'Director de Administración y Finanzas', departamento: 'DAF', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-08-14T11:00:00.000Z', updated_at: '2026-08-14T11:00:00.000Z' },
-    { id: 4, rut: '15.887.412-3', nombres: 'Andrea', apellidos: 'Sepúlveda Muñoz', nombre_completo: 'Andrea Sepúlveda Muñoz', email: 'asepulveda@cmds.cl', dominio_id: 1, establecimiento_id: findEstId(355), cargo: 'Analista de Remuneraciones', departamento: 'Recursos Humanos', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-09-02T09:30:00.000Z', updated_at: '2026-09-02T09:30:00.000Z' },
-    { id: 5, rut: '13.456.111-2', nombres: 'Mauricio', apellidos: 'Gutiérrez Rojas', nombre_completo: 'Mauricio Gutiérrez Rojas', email: 'mgutierrez@cmds.cl', dominio_id: 1, establecimiento_id: findEstId(375), cargo: 'Abogado Asesor', departamento: 'Jurídico', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-09-10T15:00:00.000Z', updated_at: '2026-09-10T15:00:00.000Z' },
-    { id: 6, rut: '10.998.231-K', nombres: 'Hernán', apellidos: 'Fuentes Lira', nombre_completo: 'Hernán Fuentes Lira', email: 'hfuentes@cmds.cl', dominio_id: 1, establecimiento_id: findEstId(381), cargo: 'Arquitecto Revisor', departamento: 'Obras', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'BAJA', created_at: '2026-08-20T09:00:00.000Z', updated_at: '2026-10-28T17:30:00.000Z' },
-
-    // cmds-salud.cl (Pool 2: E3, Pool 3: E1, Pool 4: Business Basic no Teams)
-    { id: 7, rut: '13.777.888-9', nombres: 'Jorge', apellidos: 'Rojas Miranda', nombre_completo: 'Dr. Jorge Rojas Miranda', email: 'jrojas@cmds-salud.cl', dominio_id: 2, establecimiento_id: findEstId(600), cargo: 'Director de Salud APS', departamento: 'Dirección de Salud', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-08-15T08:30:00.000Z', updated_at: '2026-08-15T08:30:00.000Z' },
-    { id: 8, rut: '16.543.210-4', nombres: 'Valentina', apellidos: 'Araya Gómez', nombre_completo: 'Dra. Valentina Araya Gómez', email: 'varaya@cmds-salud.cl', dominio_id: 2, establecimiento_id: findEstId(605), cargo: 'Médico Jefe SOME', departamento: 'Medicina General', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-09-01T08:45:00.000Z', updated_at: '2026-09-01T08:45:00.000Z' },
-    { id: 9, rut: '17.112.334-5', nombres: 'Sebastián', apellidos: 'Vargas Contreras', nombre_completo: 'Sebastián Vargas Contreras', email: 'svargas@cmds-salud.cl', dominio_id: 2, establecimiento_id: findEstId(601), cargo: 'Enfermero Coordinador', departamento: 'Clínico', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-09-05T10:15:00.000Z', updated_at: '2026-09-05T10:15:00.000Z' },
-    { id: 10, rut: '18.223.445-6', nombres: 'Camila', apellidos: 'Pizarro Alfaro', nombre_completo: 'Camila Pizarro Alfaro', email: 'cpizarro@cmds-salud.cl', dominio_id: 2, establecimiento_id: findEstId(603), cargo: 'Matrona Clínica', departamento: 'Salud Mujer', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-09-12T11:20:00.000Z', updated_at: '2026-09-12T11:20:00.000Z' },
-    { id: 11, rut: '15.334.556-7', nombres: 'Gonzalo', apellidos: 'Díaz Cortés', nombre_completo: 'Gonzalo Díaz Cortés', email: 'gdiaz@cmds-salud.cl', dominio_id: 2, establecimiento_id: findEstId(602), cargo: 'TENS Admisión SOME', departamento: 'SOME', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-09-18T09:00:00.000Z', updated_at: '2026-09-18T09:00:00.000Z' },
-    { id: 12, rut: '19.445.667-8', nombres: 'Daniela', apellidos: 'Morales Silva', nombre_completo: 'Daniela Morales Silva', email: 'dmorales@cmds-salud.cl', dominio_id: 2, establecimiento_id: findEstId(613), cargo: 'Químico Farmacéutico', departamento: 'Farmacia Comunal', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-10-02T14:00:00.000Z', updated_at: '2026-10-02T14:00:00.000Z' },
-    { id: 13, rut: '14.889.001-2', nombres: 'Claudio', apellidos: 'Núñez Rivera', nombre_completo: 'Claudio Núñez Rivera', email: 'cnunez@cmds-salud.cl', dominio_id: 2, establecimiento_id: findEstId(612), cargo: 'Encargado Bodega e Insumos', departamento: 'Droguería', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-10-08T12:10:00.000Z', updated_at: '2026-10-08T12:10:00.000Z' },
-    { id: 14, rut: '16.778.990-1', nombres: 'Fabiola', apellidos: 'Zepeda Toro', nombre_completo: 'Fabiola Zepeda Toro', email: 'fzepeda@cmds-salud.cl', dominio_id: 2, establecimiento_id: findEstId(606), cargo: 'Administrativa OIRS', departamento: 'Atención Usuario', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-10-15T09:40:00.000Z', updated_at: '2026-10-15T09:40:00.000Z' },
-    { id: 15, rut: '12.654.987-3', nombres: 'Ricardo', apellidos: 'Olivares Páez', nombre_completo: 'Dr. Ricardo Olivares Páez', email: 'rolivares@cmds-salud.cl', dominio_id: 2, establecimiento_id: findEstId(604), cargo: 'Médico APS', departamento: 'Medicina General', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'BAJA', created_at: '2026-08-25T09:00:00.000Z', updated_at: '2026-11-03T18:00:00.000Z' },
-
-    // cmds-educacion.cl (Pool 5: A3 Faculty, Pool 6: A3 Student)
-    { id: 16, rut: '15.444.555-6', nombres: 'Patricia', apellidos: 'Alvear Silva', nombre_completo: 'Patricia Alvear Silva', email: 'palvear@cmds-educacion.cl', dominio_id: 3, establecimiento_id: findEstId(12), cargo: 'Directora Liceo A-12', departamento: 'Equipo Directivo', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-08-18T08:00:00.000Z', updated_at: '2026-08-18T08:00:00.000Z' },
-    { id: 17, rut: '13.221.445-9', nombres: 'Roberto', apellidos: 'Carrasco Valdés', nombre_completo: 'Roberto Carrasco Valdés', email: 'rcarrasco@cmds-educacion.cl', dominio_id: 3, establecimiento_id: findEstId(16), cargo: 'Jefe UTP', departamento: 'Unidad Técnico Pedagógica', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-09-03T08:30:00.000Z', updated_at: '2026-09-03T08:30:00.000Z' },
-    { id: 18, rut: '17.889.112-K', nombres: 'Marcela', apellidos: 'Godoy Espinoza', nombre_completo: 'Marcela Godoy Espinoza', email: 'mgodoy@cmds-educacion.cl', dominio_id: 3, establecimiento_id: findEstId(75), cargo: 'Docente Matemática', departamento: 'Segundo Ciclo Básico', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-09-14T10:00:00.000Z', updated_at: '2026-09-14T10:00:00.000Z' },
-    { id: 19, rut: '18.901.234-1', nombres: 'Felipe', apellidos: 'Rojas Vega', nombre_completo: 'Felipe Rojas Vega', email: 'frojas@cmds-educacion.cl', dominio_id: 3, establecimiento_id: findEstId(29), cargo: 'Docente Historia y Cs. Sociales', departamento: 'Enseñanza Media', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-10-01T09:10:00.000Z', updated_at: '2026-10-01T09:10:00.000Z' },
-    { id: 20, rut: '16.123.789-4', nombres: 'Paulina', apellidos: 'Cárdenas Soto', nombre_completo: 'Paulina Cárdenas Soto', email: 'pcardenas@cmds-educacion.cl', dominio_id: 3, establecimiento_id: findEstId(530), cargo: 'Educadora Diferencial PIE', departamento: 'Integración Escolar', tipo_usuario: 'FUNCIONARIO', estado_cuenta: 'ACTIVO', created_at: '2026-10-10T11:30:00.000Z', updated_at: '2026-10-10T11:30:00.000Z' },
-    { id: 21, rut: '23.456.789-0', nombres: 'Matías Ignacio', apellidos: 'Salazar Castillo', nombre_completo: 'Matías Ignacio Salazar Castillo', email: 'matias.salazar@cmds-educacion.cl', dominio_id: 3, establecimiento_id: findEstId(15), cargo: 'Estudiante 3° Medio A', departamento: 'Alumnado', tipo_usuario: 'ESTUDIANTE', estado_cuenta: 'ACTIVO', created_at: '2026-10-18T12:00:00.000Z', updated_at: '2026-10-18T12:00:00.000Z' },
-    { id: 22, rut: '24.112.233-5', nombres: 'Sofía Paz', apellidos: 'Henríquez Araya', nombre_completo: 'Sofía Paz Henríquez Araya', email: 'sofia.henriquez@cmds-educacion.cl', dominio_id: 3, establecimiento_id: findEstId(35), cargo: 'Estudiante 4° Medio B', departamento: 'Alumnado', tipo_usuario: 'ESTUDIANTE', estado_cuenta: 'ACTIVO', created_at: '2026-10-20T12:15:00.000Z', updated_at: '2026-10-20T12:15:00.000Z' },
-    { id: 23, rut: '24.556.677-8', nombres: 'Benjamín Alonso', apellidos: 'Cortés Tapia', nombre_completo: 'Benjamín Alonso Cortés Tapia', email: 'benjamin.cortes@cmds-educacion.cl', dominio_id: 3, establecimiento_id: findEstId(22), cargo: 'Estudiante 2° Medio C', departamento: 'Alumnado', tipo_usuario: 'ESTUDIANTE', estado_cuenta: 'ACTIVO', created_at: '2026-11-02T10:30:00.000Z', updated_at: '2026-11-02T10:30:00.000Z' }
-  ];
-
-  // Asignaciones de licencias para estos usuarios (incluyendo 2 revocadas por baja)
-  const asignaciones_licencia = [
-    // cmds.cl -> Cupo 1 (Office 365 E3)
-    { id: 1, usuario_id: 1, cupo_licencia_id: 1, estado: 'ACTIVA', numero_ticket: 'TK-2026-001', asignado_por: 'rhormazabal@cmds.cl', observaciones: 'Asignación Jefatura TI', fecha_alta: '2026-08-10T09:00:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 2, usuario_id: 2, cupo_licencia_id: 1, estado: 'ACTIVA', numero_ticket: 'TK-2026-002', asignado_por: 'rhormazabal@cmds.cl', observaciones: 'Asignación Dirección Ejecutiva', fecha_alta: '2026-08-12T10:00:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 3, usuario_id: 3, cupo_licencia_id: 1, estado: 'ACTIVA', numero_ticket: 'TK-2026-003', asignado_por: 'rhormazabal@cmds.cl', observaciones: 'Asignación Dirección DAF', fecha_alta: '2026-08-14T11:00:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 4, usuario_id: 4, cupo_licencia_id: 1, estado: 'ACTIVA', numero_ticket: 'TK-2026-014', asignado_por: 'admin.central@cmds.cl', observaciones: 'Incorporación RRHH', fecha_alta: '2026-09-02T09:30:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 5, usuario_id: 5, cupo_licencia_id: 1, estado: 'ACTIVA', numero_ticket: 'TK-2026-021', asignado_por: 'admin.central@cmds.cl', observaciones: 'Abogado Depto. Jurídico', fecha_alta: '2026-09-10T15:00:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 6, usuario_id: 6, cupo_licencia_id: 1, estado: 'REVOCADA', numero_ticket: 'TK-2026-008', asignado_por: 'admin.central@cmds.cl', observaciones: 'Arquitecto Obras', fecha_alta: '2026-08-20T09:00:00.000Z', fecha_baja: '2026-10-28T17:30:00.000Z', motivo_baja: 'Término de contrato / Renuncia voluntaria' },
-
-    // cmds-salud.cl -> Cupo 2 (E3), Cupo 3 (E1), Cupo 4 (Business Basic no Teams)
-    { id: 7, usuario_id: 7, cupo_licencia_id: 2, estado: 'ACTIVA', numero_ticket: 'TK-SAL-101', asignado_por: 'salud@cmds-salud.cl', observaciones: 'Dirección de Salud APS', fecha_alta: '2026-08-15T08:30:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 8, usuario_id: 8, cupo_licencia_id: 2, estado: 'ACTIVA', numero_ticket: 'TK-SAL-104', asignado_por: 'salud@cmds-salud.cl', observaciones: 'Jefatura SOME CESFAM Norte', fecha_alta: '2026-09-01T08:45:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 9, usuario_id: 9, cupo_licencia_id: 2, estado: 'ACTIVA', numero_ticket: 'TK-SAL-109', asignado_por: 'salud@cmds-salud.cl', observaciones: 'Coordinación Clínica CESFAM Rendic', fecha_alta: '2026-09-05T10:15:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 10, usuario_id: 10, cupo_licencia_id: 2, estado: 'ACTIVA', numero_ticket: 'TK-SAL-115', asignado_por: 'salud@cmds-salud.cl', observaciones: 'Box Matrona CESFAM Corvallis', fecha_alta: '2026-09-12T11:20:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 11, usuario_id: 11, cupo_licencia_id: 3, estado: 'ACTIVA', numero_ticket: 'TK-SAL-122', asignado_por: 'salud@cmds-salud.cl', observaciones: 'Cuenta E1 Admisión SOME Centro Sur', fecha_alta: '2026-09-18T09:00:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 12, usuario_id: 12, cupo_licencia_id: 3, estado: 'ACTIVA', numero_ticket: 'TK-SAL-130', asignado_por: 'salud@cmds-salud.cl', observaciones: 'Cuenta E1 Farmacia Comunal', fecha_alta: '2026-10-02T14:00:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 13, usuario_id: 13, cupo_licencia_id: 4, estado: 'ACTIVA', numero_ticket: 'TK-SAL-138', asignado_por: 'salud@cmds-salud.cl', observaciones: 'Licencia Business Basic (sin Teams) Droguería', fecha_alta: '2026-10-08T12:10:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 14, usuario_id: 14, cupo_licencia_id: 4, estado: 'ACTIVA', numero_ticket: 'TK-SAL-142', asignado_por: 'salud@cmds-salud.cl', observaciones: 'Licencia Business Basic (sin Teams) OIRS Oriente', fecha_alta: '2026-10-15T09:40:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 15, usuario_id: 15, cupo_licencia_id: 2, estado: 'REVOCADA', numero_ticket: 'TK-SAL-102', asignado_por: 'salud@cmds-salud.cl', observaciones: 'Médico CESFAM Juan Pablo II', fecha_alta: '2026-08-25T09:00:00.000Z', fecha_baja: '2026-11-03T18:00:00.000Z', motivo_baja: 'Traslado de servicio de salud' },
-
-    // cmds-educacion.cl -> Cupo 5 (A3 Faculty), Cupo 6 (A3 Student)
-    { id: 16, usuario_id: 16, cupo_licencia_id: 5, estado: 'ACTIVA', numero_ticket: 'TK-EDU-201', asignado_por: 'educacion@cmds-educacion.cl', observaciones: 'Dirección Liceo A-12', fecha_alta: '2026-08-18T08:00:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 17, usuario_id: 17, cupo_licencia_id: 5, estado: 'ACTIVA', numero_ticket: 'TK-EDU-205', asignado_por: 'educacion@cmds-educacion.cl', observaciones: 'Jefatura UTP Liceo Industrial A-16', fecha_alta: '2026-09-03T08:30:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 18, usuario_id: 18, cupo_licencia_id: 5, estado: 'ACTIVA', numero_ticket: 'TK-EDU-212', asignado_por: 'educacion@cmds-educacion.cl', observaciones: 'Docente Escuela D-75 Darío Salas', fecha_alta: '2026-09-14T10:00:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 19, usuario_id: 19, cupo_licencia_id: 5, estado: 'ACTIVA', numero_ticket: 'TK-EDU-220', asignado_por: 'educacion@cmds-educacion.cl', observaciones: 'Docente Liceo B-29 Andrés Sabella', fecha_alta: '2026-10-01T09:10:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 20, usuario_id: 20, cupo_licencia_id: 5, estado: 'ACTIVA', numero_ticket: 'TK-EDU-229', asignado_por: 'educacion@cmds-educacion.cl', observaciones: 'Profesional PIE Comunal', fecha_alta: '2026-10-10T11:30:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 21, usuario_id: 21, cupo_licencia_id: 6, estado: 'ACTIVA', numero_ticket: 'MAT-2026-01', asignado_por: 'educacion@cmds-educacion.cl', observaciones: 'Beneficio Estudiantil A3 Liceo A-15', fecha_alta: '2026-10-18T12:00:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 22, usuario_id: 22, cupo_licencia_id: 6, estado: 'ACTIVA', numero_ticket: 'MAT-2026-02', asignado_por: 'educacion@cmds-educacion.cl', observaciones: 'Beneficio Estudiantil A3 Colegio B-35 Rendic', fecha_alta: '2026-10-20T12:15:00.000Z', fecha_baja: null, motivo_baja: null },
-    { id: 23, usuario_id: 23, cupo_licencia_id: 6, estado: 'ACTIVA', numero_ticket: 'MAT-2026-03', asignado_por: 'educacion@cmds-educacion.cl', observaciones: 'Beneficio Estudiantil A3 Liceo A-22 La Portada', fecha_alta: '2026-11-02T10:30:00.000Z', fecha_baja: null, motivo_baja: null }
-  ];
-
-  // Generar bitácora de movimientos a partir de las asignaciones
+  // Sin cuentas demostrativas iniciales: la nómina se alimenta 100% desde Microsoft 365 (Graph API) o cargas reales CMDS
+  const usuarios_m365 = [];
+  const asignaciones_licencia = [];
   const movimientos_licencia = [];
-  let movId = 1;
-  for (const asig of asignaciones_licencia) {
-    const u = usuarios_m365.find(x => x.id === asig.usuario_id);
-    const cupo = INITIAL_CUPOS_LICENCIA.find(c => c.id === asig.cupo_licencia_id);
-    const dom = INITIAL_DOMINIOS.find(d => d.id === cupo.dominio_id);
-    const lic = INITIAL_TIPOS_LICENCIA.find(t => t.id === cupo.tipo_licencia_id);
-    const est = INITIAL_ESTABLECIMIENTOS.find(e => e.id === u.establecimiento_id);
-
-    movimientos_licencia.push({
-      id: movId++,
-      tipo_movimiento: 'ALTA',
-      usuario_id: u.id,
-      usuario_email: u.email,
-      usuario_nombre: u.nombre_completo,
-      cupo_licencia_id: cupo.id,
-      dominio_nombre: dom.dominio,
-      licencia_nombre: lic.nombre,
-      establecimiento_nombre: est ? est.nombre : 'SIN ESTABLECIMIENTO',
-      motivo: asig.observaciones || 'Alta inicial de licencia Microsoft 365',
-      ticket_referencia: asig.numero_ticket || 'S/N',
-      ejecutado_por: asig.asignado_por,
-      fecha_movimiento: asig.fecha_alta
-    });
-
-    if (asig.estado === 'REVOCADA' && asig.fecha_baja) {
-      movimientos_licencia.push({
-        id: movId++,
-        tipo_movimiento: 'BAJA',
-        usuario_id: u.id,
-        usuario_email: u.email,
-        usuario_nombre: u.nombre_completo,
-        cupo_licencia_id: cupo.id,
-        dominio_nombre: dom.dominio,
-        licencia_nombre: lic.nombre,
-        establecimiento_nombre: est ? est.nombre : 'SIN ESTABLECIMIENTO',
-        motivo: asig.motivo_baja || 'Baja de licencia y liberación de cupo',
-        ticket_referencia: `${asig.numero_ticket}-BAJA`,
-        ejecutado_por: asig.asignado_por,
-        fecha_movimiento: asig.fecha_baja
-      });
-    }
-  }
 
   // Recalcular contadores asignados
-  const cuposConConteo = INITIAL_CUPOS_LICENCIA.map(c => {
-    const activas = asignaciones_licencia.filter(a => a.cupo_licencia_id === c.id && a.estado === 'ACTIVA').length;
-    return {
-      ...c,
-      licencias_asignadas: activas
-    };
-  });
+  const cuposConConteo = INITIAL_CUPOS_LICENCIA.map(c => ({
+    ...c,
+    licencias_asignadas: 0
+  }));
 
   return {
     dominios: INITIAL_DOMINIOS,

@@ -576,7 +576,17 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
     let altasLicencia = 0;
     let bajasLicencia = 0;
     let aliasActualizados = 0;
+    let usuariosDepurados = 0;
     let totalUsuariosDominiosCmds = 0;
+
+    // Conjunto de todos los correos reales existentes en Microsoft 365 Admin Center
+    const validGraphEmails = new Set();
+    for (const gu of graphUsers) {
+      const upn = String(gu.userPrincipalName || '').trim().toLowerCase();
+      if (upn.includes('@')) validGraphEmails.add(upn);
+      const alias = extractSecondaryAlias(upn, gu.mail, gu.proxyAddresses);
+      if (alias) validGraphEmails.add(alias.toLowerCase());
+    }
 
     const nowIso = new Date().toISOString();
     const pool = getPool();
@@ -780,8 +790,18 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           }
         }
 
+        // C) Depurar cualquier cuenta en BD que NO exista en el Centro de Administración Microsoft 365
+        if (validGraphEmails.size > 0) {
+          const validEmailsArray = Array.from(validGraphEmails);
+          const delRes = await client.query(
+            `DELETE FROM usuarios_m365 WHERE NOT (LOWER(email) = ANY($1))`,
+            [validEmailsArray]
+          );
+          usuariosDepurados = delRes.rowCount || 0;
+        }
+
         const durationMs = Date.now() - startTime;
-        const summaryText = `Sincronizados ${totalUsuariosDominiosCmds} usuarios M365: ${usuariosNuevos} nuevos, ${altasLicencia} altas de licencia, ${bajasLicencia} bajas de licencia, ${aliasActualizados} alias actualizados (${durationMs} ms).`;
+        const summaryText = `Sincronizados ${totalUsuariosDominiosCmds} usuarios M365: ${usuariosNuevos} nuevos, ${altasLicencia} altas de licencia, ${bajasLicencia} bajas de licencia, ${aliasActualizados} alias actualizados${usuariosDepurados > 0 ? `, ${usuariosDepurados} cuentas inexistentes en M365 depuradas` : ''} (${durationMs} ms).`;
 
         await client.query(
           `INSERT INTO historial_sync_m365
@@ -910,7 +930,8 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           const newAlias = alias || dbUser.email_alias || '';
           const aliasChanged = newAlias !== (dbUser.email_alias || '');
           const statusChanged = estadoCuenta !== dbUser.estado_cuenta;
-          if (aliasChanged || statusChanged) {
+          const objIdChanged = gu.id && gu.id !== dbUser.m365_object_id;
+          if (aliasChanged || statusChanged || objIdChanged) {
             dbUser.email_alias = newAlias;
             dbUser.estado_cuenta = estadoCuenta;
             dbUser.m365_object_id = gu.id || dbUser.m365_object_id || '';
@@ -988,8 +1009,24 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
         }
       }
 
+      // C) Depurar cualquier cuenta en store local que NO exista en el Centro de Administración Microsoft 365
+      if (validGraphEmails.size > 0) {
+        const idsToRemove = new Set(
+          store.usuarios_m365
+            .filter(u => !validGraphEmails.has(String(u.email || '').toLowerCase()))
+            .map(u => u.id)
+        );
+        if (idsToRemove.size > 0) {
+          usuariosDepurados = idsToRemove.size;
+          store.usuarios_m365 = store.usuarios_m365.filter(u => !idsToRemove.has(u.id));
+          store.asignaciones_licencia = store.asignaciones_licencia.filter(
+            a => !idsToRemove.has(a.usuario_id)
+          );
+        }
+      }
+
       const durationMs = Date.now() - startTime;
-      const summaryText = `Sincronizados ${totalUsuariosDominiosCmds} usuarios M365: ${usuariosNuevos} nuevos, ${altasLicencia} altas de licencia, ${bajasLicencia} bajas de licencia, ${aliasActualizados} alias actualizados (${durationMs} ms).`;
+      const summaryText = `Sincronizados ${totalUsuariosDominiosCmds} usuarios M365: ${usuariosNuevos} nuevos, ${altasLicencia} altas de licencia, ${bajasLicencia} bajas de licencia, ${aliasActualizados} alias actualizados${usuariosDepurados > 0 ? `, ${usuariosDepurados} cuentas inexistentes en M365 depuradas` : ''} (${durationMs} ms).`;
       if (!Array.isArray(store.historial_sync_m365)) store.historial_sync_m365 = [];
       store.historial_sync_m365.unshift({
         id: store.historial_sync_m365.length + 1,

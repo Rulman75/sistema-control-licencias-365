@@ -700,9 +700,26 @@ export default function GestionUsuarios() {
                             Alias: <strong>{u.email_alias}</strong>
                           </div>
                         )}
-                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">
-                          @{u.dominio} ({u.dominio_sector})
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">
+                            @{u.dominio} ({u.dominio_sector})
+                          </span>
+                          {u.m365_object_id ? (
+                            <span
+                              title={`Cuenta verificada en admin.cloud.microsoft (Entra Object ID: ${u.m365_object_id})`}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold"
+                            >
+                              ✔ Verificado M365
+                            </span>
+                          ) : (
+                            <span
+                              title="Cuenta registrada manualmente o pendiente de sincronizar con Microsoft 365"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold"
+                            >
+                              Registro Local
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3 px-4">
