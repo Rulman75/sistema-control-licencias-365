@@ -6,6 +6,7 @@ import {
   Lock,
   Unlock,
   Edit3,
+  Trash2,
   Copy,
   Check,
   Sparkles,
@@ -15,9 +16,10 @@ import {
   AlertTriangle,
   History
 } from 'lucide-react';
-import { api, checkPasswordStrength } from '../api';
+import { api, checkPasswordStrength, getStoredUser } from '../api';
 
 export default function UsuariosSistema() {
+  const currentUser = getStoredUser();
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [auditoria, setAuditoria] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -182,6 +184,25 @@ export default function UsuariosSistema() {
       await cargarDatos();
     } catch {
       showToast('err', 'Error al desbloquear la cuenta.');
+    }
+  };
+
+  const handleEliminarUsuario = async (u: any) => {
+    if (currentUser && u.id === currentUser.id) {
+      showToast('err', 'No puede eliminar su propia cuenta de administrador en sesión.');
+      return;
+    }
+    const ok = window.confirm(
+      `¿Está seguro que desea eliminar permanentemente al usuario del sistema '${u.username}' (${u.nombre_completo})?`
+    );
+    if (!ok) return;
+
+    try {
+      const res = await api.delete(`/sistema-usuarios/${u.id}`);
+      showToast('ok', res.data.message || `Usuario '${u.username}' eliminado exitosamente.`);
+      await cargarDatos();
+    } catch (err: any) {
+      showToast('err', err.response?.data?.error || 'Error al eliminar el usuario del sistema.');
     }
   };
 
@@ -417,6 +438,17 @@ export default function UsuariosSistema() {
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
+
+                            {(!currentUser || currentUser.id !== u.id) && (
+                              <button
+                                type="button"
+                                onClick={() => handleEliminarUsuario(u)}
+                                className="p-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white transition-colors cursor-pointer"
+                                title="Eliminar Usuario del Sistema"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

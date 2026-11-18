@@ -313,102 +313,6 @@ function buildInitialDemoData() {
       bloqueado_hasta: null,
       ultimo_acceso: null,
       created_at: '2026-10-01T08:30:00.000Z'
-    },
-    {
-      id: 3,
-      username: 'admin.central@cmds.cl',
-      nombre_completo: 'Carlos Mondaca Valdés',
-      email: 'admin.central@cmds.cl',
-      cargo: 'Gestor TI Administración Casa Central',
-      password_hash: defaultHash,
-      rol_acceso: 'GESTOR',
-      ambito: 'ADMINISTRACION',
-      debe_cambiar_clave: true,
-      activo: true,
-      intentos_fallidos: 0,
-      bloqueado_hasta: null,
-      ultimo_acceso: null,
-      created_at: '2026-10-05T09:00:00.000Z'
-    },
-    {
-      id: 4,
-      username: 'educacion@cmds-educacion.cl',
-      nombre_completo: 'Patricia Alvear Silva',
-      email: 'educacion@cmds-educacion.cl',
-      cargo: 'Coordinadora Licenciamiento Educación',
-      password_hash: defaultHash,
-      rol_acceso: 'GESTOR',
-      ambito: 'EDUCACION',
-      debe_cambiar_clave: true,
-      activo: true,
-      intentos_fallidos: 0,
-      bloqueado_hasta: null,
-      ultimo_acceso: null,
-      created_at: '2026-10-05T09:15:00.000Z'
-    },
-    {
-      id: 5,
-      username: 'salud@cmds-salud.cl',
-      nombre_completo: 'Dr. Jorge Rojas Miranda',
-      email: 'salud@cmds-salud.cl',
-      cargo: 'Coordinador TI Salud APS',
-      password_hash: defaultHash,
-      rol_acceso: 'GESTOR',
-      ambito: 'SALUD',
-      debe_cambiar_clave: true,
-      activo: true,
-      intentos_fallidos: 0,
-      bloqueado_hasta: null,
-      ultimo_acceso: null,
-      created_at: '2026-10-05T09:30:00.000Z'
-    },
-    {
-      id: 6,
-      username: 'auditor@cmds.cl',
-      nombre_completo: 'Lorena Valenzuela Ortiz',
-      email: 'auditor@cmds.cl',
-      cargo: 'Auditora Control Interno (Solo Lectura)',
-      password_hash: defaultHash,
-      rol_acceso: 'VISUALIZADOR',
-      ambito: 'GLOBAL',
-      debe_cambiar_clave: true,
-      activo: true,
-      intentos_fallidos: 0,
-      bloqueado_hasta: null,
-      ultimo_acceso: null,
-      created_at: '2026-10-10T10:00:00.000Z'
-    },
-    {
-      id: 7,
-      username: 'consulta.salud@cmds-salud.cl',
-      nombre_completo: 'Dra. Carolina Pizarro Araya',
-      email: 'consulta.salud@cmds-salud.cl',
-      cargo: 'Subdirectora Salud APS (Solo Visualización)',
-      password_hash: defaultHash,
-      rol_acceso: 'VISUALIZADOR',
-      ambito: 'SALUD',
-      debe_cambiar_clave: true,
-      activo: true,
-      intentos_fallidos: 0,
-      bloqueado_hasta: null,
-      ultimo_acceso: null,
-      created_at: '2026-10-12T11:00:00.000Z'
-    },
-    {
-      id: 8,
-      username: 'consulta.educacion@cmds-educacion.cl',
-      nombre_completo: 'Roberto Castillo Olivares',
-      email: 'consulta.educacion@cmds-educacion.cl',
-      cargo: 'Coordinador Pedagógico Educación (Solo Visualización)',
-      password_hash: defaultHash,
-      rol_acceso: 'VISUALIZADOR',
-      ambito: 'EDUCACION',
-      debe_cambiar_clave: false,
-      activo: true,
-      intentos_fallidos: 0,
-      bloqueado_hasta: null,
-      ultimo_acceso: null,
-      created_at: '2026-10-12T11:15:00.000Z'
     }
   ];
 
@@ -561,12 +465,30 @@ function buildInitialDemoData() {
 // ============================================================================
 // LECTURA / ESCRITURA STORE LOCAL DE RESPALDO
 // ============================================================================
+const REMOVED_DEMO_SYSTEM_USERS = new Set([
+  'admin.central@cmds.cl',
+  'educacion@cmds-educacion.cl',
+  'salud@cmds-salud.cl',
+  'auditor@cmds.cl',
+  'consulta.salud@cmds-salud.cl',
+  'consulta.educacion@cmds-educacion.cl'
+]);
+
 function readLocalStore() {
   try {
     if (fs.existsSync(STORE_PATH)) {
       const raw = fs.readFileSync(STORE_PATH, 'utf8');
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.dominios) && Array.isArray(parsed.cupos_licencia)) {
+        if (Array.isArray(parsed.usuarios_sistema)) {
+          const prevLen = parsed.usuarios_sistema.length;
+          parsed.usuarios_sistema = parsed.usuarios_sistema.filter(
+            u => !REMOVED_DEMO_SYSTEM_USERS.has(String(u.username || '').toLowerCase())
+          );
+          if (parsed.usuarios_sistema.length !== prevLen) {
+            writeLocalStore(parsed);
+          }
+        }
         return parsed;
       }
     }
@@ -839,12 +761,11 @@ async function initDatabase() {
         await client.query(`SELECT setval('auditoria_accesos_id_seq', (SELECT COALESCE(MAX(id), 1) FROM auditoria_accesos))`);
       }
 
-      // Exigir cambio de clave en primer ingreso para perfiles secundarios que aún no han iniciado sesión
-      await client.query(`
-        UPDATE usuarios_sistema
-        SET debe_cambiar_clave = TRUE
-        WHERE id >= 3 AND ultimo_acceso IS NULL
-      `);
+      // Eliminar cuentas demostrativas iniciales solicitadas por el administrador
+      await client.query(
+        `DELETE FROM usuarios_sistema WHERE LOWER(username) = ANY($1)`,
+        [Array.from(REMOVED_DEMO_SYSTEM_USERS)]
+      );
 
       // Sincronizar store local desde PostgreSQL para mantener espejo actualizado
       await syncPgToLocal(pgPool);

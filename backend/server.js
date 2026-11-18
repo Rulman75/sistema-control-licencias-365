@@ -1952,6 +1952,51 @@ app.put('/api/sistema-usuarios/:id', requireAuth, requireSystemAdmin, async (req
   }
 });
 
+app.delete('/api/sistema-usuarios/:id', requireAuth, requireSystemAdmin, async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    const ip = String(req.headers['x-forwarded-for'] || req.ip || req.socket.remoteAddress || '127.0.0.1')
+      .split(',')[0]
+      .trim();
+
+    const state = await getFullState();
+    const target = state.usuarios_sistema.find(u => u.id === targetId);
+    if (!target) {
+      return res.status(404).json({ error: 'Usuario del sistema no encontrado.' });
+    }
+
+    if (target.id === req.user.id) {
+      return res.status(400).json({ error: 'Por seguridad, no puede eliminar su propia cuenta de administrador en sesión.' });
+    }
+
+    const pool = getPool();
+    if (isPgAvailable() && pool) {
+      await pool.query('DELETE FROM usuarios_sistema WHERE id = $1', [targetId]);
+    }
+    const store = readLocalStore();
+    if (Array.isArray(store.usuarios_sistema)) {
+      store.usuarios_sistema = store.usuarios_sistema.filter(u => u.id !== targetId);
+      writeLocalStore(store);
+    }
+
+    await registrarAuditoria(
+      req.user.username,
+      'ELIMINAR_USUARIO_SISTEMA',
+      ip,
+      true,
+      `Eliminado usuario del sistema '${target.username}' (${target.nombre_completo})`
+    );
+
+    res.json({
+      status: 'ok',
+      message: `Usuario '${target.username}' eliminado permanentemente del sistema.`
+    });
+  } catch (err) {
+    console.error('[DELETE SISTEMA USUARIO ERROR]:', err);
+    res.status(500).json({ error: 'Error al eliminar el usuario del sistema.' });
+  }
+});
+
 // Reseteo Seguro de Contraseña en el Mantenedor de Usuarios
 app.post('/api/sistema-usuarios/:id/reset-password', requireAuth, requireSystemAdmin, async (req, res) => {
   try {
