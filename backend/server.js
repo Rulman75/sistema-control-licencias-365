@@ -937,7 +937,21 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
   try {
     const state = await getFullState();
     const curVer = getStateVersion();
-    const { search, dominio_id, tipo_licencia_id, establecimiento_id, sector, estado_cuenta, tipo_usuario, tipo_cuenta } = req.query;
+    const {
+      search,
+      dominio_id,
+      tipo_licencia_id,
+      establecimiento_id,
+      sector,
+      estado_cuenta,
+      tipo_usuario,
+      tipo_cuenta,
+      page,
+      limit
+    } = req.query;
+    const isPaginated = page !== undefined || limit !== undefined;
+    const pageNum = Math.max(1, Number(page || 1));
+    const limitNum = Math.max(10, Math.min(500, Number(limit || 100)));
     const hasFilters = Boolean(
       search || dominio_id || tipo_licencia_id || establecimiento_id || sector || estado_cuenta || tipo_usuario || tipo_cuenta
     );
@@ -1029,7 +1043,7 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
       };
     }
 
-    if (!hasFilters) {
+    if (!isPaginated && !hasFilters) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       if (acceptEnc.includes('gzip') && usuariosMemCache.allGzipBuf) {
         res.setHeader('Content-Encoding', 'gzip');
@@ -1038,24 +1052,41 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
       return res.send(usuariosMemCache.allJsonStr);
     }
 
-    const filtered = usuariosMemCache.enrichedUsers.filter(u => {
-      if (dominio_id && Number(dominio_id) !== u.dominio_id) return false;
-      if (establecimiento_id && Number(establecimiento_id) !== u.establecimiento_id) return false;
-      if (sector && u.dominio_sector !== sector) return false;
-      if (estado_cuenta && u.estado_cuenta !== estado_cuenta) return false;
-      if (tipo_cuenta && u.tipo_cuenta !== tipo_cuenta) return false;
-      if (tipo_usuario && u.tipo_usuario !== tipo_usuario) return false;
-      if (tipo_licencia_id) {
-        if (tipo_licencia_id === 'SIN_LICENCIA') {
-          if (u.licencias_activas.length > 0) return false;
-        } else {
-          const targetTipoId = Number(tipo_licencia_id);
-          const hasLic = u.licencias_activas.some(la => la.tipo_licencia_id === targetTipoId);
-          if (!hasLic) return false;
+    const q = search && String(search).trim() !== '' ? String(search).trim().toLowerCase() : '';
+    const domNum = dominio_id ? Number(dominio_id) : null;
+    const estNum = establecimiento_id ? Number(establecimiento_id) : null;
+    const targetLicNum = tipo_licencia_id && tipo_licencia_id !== 'SIN_LICENCIA' ? Number(tipo_licencia_id) : null;
+
+    const filtered = [];
+    const sinLicenciaIds = [];
+
+    for (let i = 0; i < usuariosMemCache.enrichedUsers.length; i++) {
+      const u = usuariosMemCache.enrichedUsers[i];
+      if (domNum !== null && u.dominio_id !== domNum) continue;
+      if (estNum !== null && u.establecimiento_id !== estNum) continue;
+      if (sector && u.dominio_sector !== sector) continue;
+      if (estado_cuenta && u.estado_cuenta !== estado_cuenta) continue;
+      if (tipo_cuenta && u.tipo_cuenta !== tipo_cuenta) continue;
+      if (tipo_usuario) {
+        const esMaq = u.tipo_cuenta === 'MAQUINA' || u.tipo_usuario === 'MAQUINA';
+        if (tipo_usuario === 'PERSONA_TODAS') {
+          if (esMaq) continue;
+        } else if (tipo_usuario === 'MAQUINA') {
+          if (!esMaq) continue;
+        } else if (u.tipo_usuario !== tipo_usuario) {
+          continue;
         }
       }
-      if (search && String(search).trim() !== '') {
-        const q = String(search).trim().toLowerCase();
+      const hasAnyLic = u.licencias_activas && u.licencias_activas.length > 0;
+      if (tipo_licencia_id) {
+        if (tipo_licencia_id === 'SIN_LICENCIA') {
+          if (hasAnyLic) continue;
+        } else if (targetLicNum !== null) {
+          const hasLic = hasAnyLic && u.licencias_activas.some(la => la.tipo_licencia_id === targetLicNum);
+          if (!hasLic) continue;
+        }
+      }
+      if (q) {
         const match =
           (u.nombre_completo && u.nombre_completo.toLowerCase().includes(q)) ||
           (u.email && u.email.toLowerCase().includes(q)) ||
@@ -1064,15 +1095,27 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
           (u.cargo && u.cargo.toLowerCase().includes(q)) ||
           (u.departamento && u.departamento.toLowerCase().includes(q)) ||
           (u.establecimiento_nombre && u.establecimiento_nombre.toLowerCase().includes(q));
-        if (!match) return false;
+        if (!match) continue;
       }
-      return true;
-    });
+      if (!hasAnyLic && sinLicenciaIds.length < 3000) {
+        sinLicenciaIds.push(u.id);
+      }
+      filtered.push(u);
+    }
+
+    const rowsToReturn = isPaginated
+      ? filtered.slice((pageNum - 1) * limitNum, pageNum * limitNum)
+      : filtered;
 
     const payloadStr = JSON.stringify({
-      usuarios: filtered,
-      total: filtered.length
+      usuarios: rowsToReturn,
+      total: filtered.length,
+      page: pageNum,
+      total_pages: Math.max(1, Math.ceil(filtered.length / limitNum)),
+      sin_licencia_count: sinLicenciaIds.length,
+      sin_licencia_ids: sinLicenciaIds
     });
+
     if (acceptEnc.includes('gzip')) {
       zlib.gzip(Buffer.from(payloadStr, 'utf8'), (err, compressed) => {
         if (err) {

@@ -78,39 +78,76 @@ export default function GestionUsuarios() {
   // Modal Historial de Usuario
   const [modalHistorialUser, setModalHistorialUser] = useState<any | null>(null);
 
-  // Paginación y Selección en Lote
+  // Paginación del servidor (ultra rápida: solo transfiere 100 registros por página ~3KB)
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 100;
+  const [totalFiltrados, setTotalFiltrados] = useState(0);
+  const [totalPagesServer, setTotalPagesServer] = useState(1);
+  const [sinLicenciaCountServer, setSinLicenciaCountServer] = useState(0);
+  const [sinLicenciaIdsServer, setSinLicenciaIdsServer] = useState<number[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [showModalMasivo, setShowModalMasivo] = useState(false);
   const [cupoMasivoId, setCupoMasivoId] = useState('');
   const [ticketMasivo, setTicketMasivo] = useState('');
   const [obsMasivo, setObsMasivo] = useState('');
 
-  const cargarTodo = async () => {
-    setLoading(true);
+  const cargarCatalogos = async () => {
     try {
-      const [resUsers, resCupos, resCat] = await Promise.all([
-        api.get('/usuarios'),
+      const [resCupos, resCat] = await Promise.all([
         api.get('/licencias/cupos'),
         api.get('/catalogos')
       ]);
-
-      setUsuarios(resUsers.data.usuarios || []);
       setCupos(resCupos.data.cupos || []);
       setDominios(resCat.data.dominios || []);
       setTiposLicencia(resCat.data.tipos_licencia || []);
       setEstablecimientos(resCat.data.establecimientos || []);
     } catch (e) {
-      console.error('Error cargando gestión de usuarios:', e);
+      console.error('Error cargando catálogos:', e);
+    }
+  };
+
+  const cargarPaginaUsuarios = async (targetPage = page) => {
+    setLoading(true);
+    try {
+      const resUsers = await api.get('/usuarios', {
+        params: {
+          page: targetPage,
+          limit: PAGE_SIZE,
+          search: search.trim() || undefined,
+          dominio_id: filtroDominio || undefined,
+          tipo_licencia_id: filtroTipoLic || undefined,
+          establecimiento_id: filtroEstablecimiento || undefined,
+          estado_cuenta: filtroEstado || undefined,
+          tipo_usuario: filtroTipoUsuario || undefined
+        }
+      });
+      setUsuarios(resUsers.data.usuarios || []);
+      setTotalFiltrados(resUsers.data.total ?? (resUsers.data.usuarios || []).length);
+      setTotalPagesServer(resUsers.data.total_pages || 1);
+      setSinLicenciaCountServer(resUsers.data.sin_licencia_count || 0);
+      setSinLicenciaIdsServer(resUsers.data.sin_licencia_ids || []);
+    } catch (e) {
+      console.error('Error cargando página de usuarios:', e);
     } finally {
       setLoading(false);
     }
   };
 
+  const cargarTodo = async () => {
+    await Promise.all([cargarCatalogos(), cargarPaginaUsuarios(page)]);
+  };
+
   useEffect(() => {
-    cargarTodo();
+    cargarCatalogos();
   }, []);
+
+  // Recargar página instantáneamente al cambiar filtros o número de página (con debounce de 120ms al digitar)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      cargarPaginaUsuarios(page);
+    }, search.trim() ? 120 : 0);
+    return () => clearTimeout(timer);
+  }, [page, search, filtroDominio, filtroTipoLic, filtroEstablecimiento, filtroEstado, filtroTipoUsuario]);
 
   // Resetear paginación a 1 al digitar o cambiar cualquier filtro
   useEffect(() => {
@@ -286,56 +323,11 @@ export default function GestionUsuarios() {
       )
     : establecimientos;
 
-  // Filtrado instantáneo en tiempo real memorizado (useMemo) para 12.000+ registros
-  const { usuariosFiltrados, sinLicenciaCount } = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const targetLicId = filtroTipoLic && filtroTipoLic !== 'SIN_LICENCIA' ? Number(filtroTipoLic) : null;
-    const list: any[] = [];
-    let sinLic = 0;
-
-    for (let i = 0; i < usuarios.length; i++) {
-      const u = usuarios[i];
-      if (filtroDominio && String(u.dominio_id) !== String(filtroDominio)) continue;
-      if (filtroEstablecimiento && String(u.establecimiento_id) !== String(filtroEstablecimiento)) continue;
-      if (filtroEstado && u.estado_cuenta !== filtroEstado) continue;
-      if (filtroTipoUsuario) {
-        const esMaq = u.tipo_cuenta === 'MAQUINA' || u.tipo_usuario === 'MAQUINA';
-        if (filtroTipoUsuario === 'PERSONA_TODAS') {
-          if (esMaq) continue;
-        } else if (filtroTipoUsuario === 'MAQUINA') {
-          if (!esMaq) continue;
-        } else if (u.tipo_usuario !== filtroTipoUsuario) {
-          continue;
-        }
-      }
-      const hasAnyLic = u.licencias_activas && u.licencias_activas.length > 0;
-      if (filtroTipoLic) {
-        if (filtroTipoLic === 'SIN_LICENCIA') {
-          if (hasAnyLic) continue;
-        } else if (targetLicId !== null) {
-          const hasLic = hasAnyLic && u.licencias_activas.some((la: any) => Number(la.tipo_licencia_id) === targetLicId);
-          if (!hasLic) continue;
-        }
-      }
-      if (q !== '') {
-        const match =
-          (u.nombre_completo && u.nombre_completo.toLowerCase().includes(q)) ||
-          (u.email && u.email.toLowerCase().includes(q)) ||
-          (u.email_alias && u.email_alias.toLowerCase().includes(q)) ||
-          (u.rut && u.rut.toLowerCase().includes(q)) ||
-          (u.cargo && u.cargo.toLowerCase().includes(q)) ||
-          (u.departamento && u.departamento.toLowerCase().includes(q)) ||
-          (u.establecimiento_nombre && u.establecimiento_nombre.toLowerCase().includes(q));
-        if (!match) continue;
-      }
-      if (!hasAnyLic) sinLic++;
-      list.push(u);
-    }
-    return { usuariosFiltrados: list, sinLicenciaCount: sinLic };
-  }, [usuarios, filtroDominio, filtroEstablecimiento, filtroEstado, filtroTipoUsuario, filtroTipoLic, search]);
-
-  const totalPages = Math.max(1, Math.ceil(usuariosFiltrados.length / PAGE_SIZE));
-  const usuariosPaginados = usuariosFiltrados.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Datos ya vienen filtrados y paginados desde la caché en memoria RAM del servidor (100 registros ~3KB)
+  const usuariosFiltrados = usuarios;
+  const sinLicenciaCount = sinLicenciaCountServer;
+  const totalPages = totalPagesServer;
+  const usuariosPaginados = usuarios;
 
   const handleToggleSelectUser = (id: number) => {
     setSelectedUserIds((prev) =>
@@ -353,10 +345,7 @@ export default function GestionUsuarios() {
         setSelectedUserIds((prev) => Array.from(new Set([...prev, ...pageIds])));
       }
     } else {
-      const sinLicIds = usuariosFiltrados
-        .filter((u) => !u.licencias_activas || u.licencias_activas.length === 0)
-        .map((u) => u.id);
-      setSelectedUserIds(sinLicIds);
+      setSelectedUserIds(sinLicenciaIdsServer);
     }
   };
 
@@ -568,7 +557,7 @@ export default function GestionUsuarios() {
         <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-bold">
-              Total filtrado: <strong>{usuariosFiltrados.length.toLocaleString('es-CL')}</strong> cuenta(s) · Página{' '}
+              Total filtrado: <strong>{totalFiltrados.toLocaleString('es-CL')}</strong> cuenta(s) · Página{' '}
               <strong>{page}</strong> de <strong>{totalPages}</strong>
             </span>
             {!isReadOnly && (
@@ -850,8 +839,8 @@ export default function GestionUsuarios() {
           <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
             <span className="text-slate-600 font-medium">
               Mostrando registros <strong>{(page - 1) * PAGE_SIZE + 1}</strong> al{' '}
-              <strong>{Math.min(page * PAGE_SIZE, usuariosFiltrados.length)}</strong> de{' '}
-              <strong>{usuariosFiltrados.length.toLocaleString('es-CL')}</strong>
+              <strong>{Math.min(page * PAGE_SIZE, totalFiltrados)}</strong> de{' '}
+              <strong>{totalFiltrados.toLocaleString('es-CL')}</strong>
             </span>
             <div className="flex items-center gap-2">
               <button
