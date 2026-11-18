@@ -647,10 +647,8 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             const tipoLic = tipoByCode.get(internalCode);
             if (!tipoLic) continue;
 
-            let cupo = cupoByDomAndTipo.get(`${domObj.id}_${tipoLic.id}`);
-            if (!cupo) {
-              cupo = state.cupos_licencia.find(c => c.tipo_licencia_id === tipoLic.id);
-            }
+            // Solo asignar cupos pertenecientes al mismo dominio de la cuenta
+            const cupo = cupoByDomAndTipo.get(`${domObj.id}_${tipoLic.id}`);
             if (cupo) {
               targetCupoIds.add(cupo.id);
             }
@@ -894,8 +892,7 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           }
           const tipoLic = tipoByCode.get(internalCode);
           if (!tipoLic) continue;
-          let cupo = cupoByDomAndTipo.get(`${domObj.id}_${tipoLic.id}`);
-          if (!cupo) cupo = store.cupos_licencia.find(c => c.tipo_licencia_id === tipoLic.id);
+          const cupo = cupoByDomAndTipo.get(`${domObj.id}_${tipoLic.id}`);
           if (cupo) targetCupoIds.add(cupo.id);
         }
 
