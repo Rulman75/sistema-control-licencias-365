@@ -9,10 +9,64 @@ const {
   isPgAvailable
 } = require('./db');
 const {
-  clasificarCuentaM365,
-  resolveEstablecimientoId,
-  splitFullName
+  esCuentaMaquinaEducacion,
+  resolverEstablecimientoCMDS
 } = require('./excelParser');
+
+function splitFullName(fullName, email) {
+  const clean = String(fullName || '').trim().replace(/\s+/g, ' ');
+  if (!clean) {
+    const local = String(email || '').split('@')[0].replace(/[._-]/g, ' ').trim();
+    return { nombres: local || 'Usuario', apellidos: '' };
+  }
+  const parts = clean.split(' ');
+  if (parts.length === 1) {
+    return { nombres: parts[0], apellidos: '' };
+  }
+  if (parts.length === 2) {
+    return { nombres: parts[0], apellidos: parts[1] };
+  }
+  return {
+    nombres: parts.slice(0, -2).join(' '),
+    apellidos: parts.slice(-2).join(' ')
+  };
+}
+
+function clasificarCuentaM365({ nombreCompleto, email, dominio, rawLicencia, skuHint }) {
+  const dom = String(dominio || '').toLowerCase();
+  if (dom === 'cmds-educacion.cl') {
+    if (esCuentaMaquinaEducacion(nombreCompleto, email)) {
+      return { tipo_cuenta: 'MAQUINA', tipo_usuario: 'MAQUINA' };
+    }
+    const rawUp = String(rawLicencia || '').toUpperCase();
+    const isStudent =
+      skuHint === 'O365_A3_STUDENT' ||
+      rawUp.includes('STU') ||
+      rawUp.includes('STUDENT') ||
+      rawUp.includes('ESTUDIANTE');
+    return {
+      tipo_cuenta: 'PERSONA',
+      tipo_usuario: isStudent ? 'ESTUDIANTE' : 'FUNCIONARIO'
+    };
+  }
+  return { tipo_cuenta: 'PERSONA', tipo_usuario: 'FUNCIONARIO' };
+}
+
+function resolveEstablecimientoId(rawUnitHint, sector, establecimientos, extraHints = []) {
+  const dominio =
+    sector === 'EDUCACION'
+      ? 'cmds-educacion.cl'
+      : sector === 'SALUD'
+      ? 'cmds-salud.cl'
+      : 'cmds.cl';
+  const est = resolverEstablecimientoCMDS({
+    texto: rawUnitHint || '',
+    textosExtra: extraHints,
+    dominio,
+    establecimientos
+  });
+  return est ? est.id : (establecimientos[0]?.id || 1);
+}
 
 const CERT_LOCAL_PATH = path.join(__dirname, 'data', 'm365_cert.json');
 let syncInProgress = false;
