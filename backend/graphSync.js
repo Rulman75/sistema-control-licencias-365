@@ -560,6 +560,11 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
     const estById = new Map(state.establecimientos.map(e => [e.id, e]));
 
     const userByEmail = new Map(state.usuarios_m365.map(u => [u.email.toLowerCase(), u]));
+    const userByObjectId = new Map(
+      state.usuarios_m365
+        .filter(u => u.m365_object_id && String(u.m365_object_id).trim() !== '')
+        .map(u => [String(u.m365_object_id).toLowerCase(), u])
+    );
     const activeAsigsByUserId = new Map();
     for (const a of state.asignaciones_licencia) {
       if (a.estado !== 'ACTIVA') continue;
@@ -651,7 +656,8 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             }
           }
 
-          let dbUser = userByEmail.get(upn);
+          const guObjId = String(gu.id || '').trim().toLowerCase();
+          let dbUser = (guObjId && userByObjectId.get(guObjId)) || userByEmail.get(upn);
 
           if (!dbUser) {
             // Crear nuevo usuario detectado en Microsoft 365
@@ -683,25 +689,35 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             );
             dbUser = insRes.rows[0];
             userByEmail.set(upn, dbUser);
+            if (guObjId) userByObjectId.set(guObjId, dbUser);
             usuariosNuevos++;
             if (alias) aliasActualizados++;
           } else {
-            // Actualizar alias, m365_object_id o estado si cambiaron en M365
+            // Actualizar correo/dominio (si migró de @cmds.cl a @cmds-salud.cl), alias, m365_object_id o estado
             const newAlias = alias || dbUser.email_alias || '';
+            const emailChanged = upn !== String(dbUser.email || '').toLowerCase();
+            const domChanged = domObj.id !== dbUser.dominio_id;
             const aliasChanged = newAlias !== (dbUser.email_alias || '');
             const statusChanged = estadoCuenta !== dbUser.estado_cuenta;
             const objIdChanged = gu.id && gu.id !== dbUser.m365_object_id;
 
-            if (aliasChanged || statusChanged || objIdChanged) {
+            if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged) {
               await client.query(
                 `UPDATE usuarios_m365
-                 SET email_alias = $1,
-                     estado_cuenta = $2,
-                     m365_object_id = $3,
-                     updated_at = $4
-                 WHERE id = $5`,
-                [newAlias, estadoCuenta, gu.id || dbUser.m365_object_id || '', nowIso, dbUser.id]
+                 SET email = $1,
+                     dominio_id = $2,
+                     email_alias = $3,
+                     estado_cuenta = $4,
+                     m365_object_id = $5,
+                     updated_at = $6
+                 WHERE id = $7`,
+                [upn, domObj.id, newAlias, estadoCuenta, gu.id || dbUser.m365_object_id || '', nowIso, dbUser.id]
               );
+              dbUser.email = upn;
+              dbUser.dominio_id = domObj.id;
+              dbUser.email_alias = newAlias;
+              userByEmail.set(upn, dbUser);
+              if (guObjId) userByObjectId.set(guObjId, dbUser);
               if (aliasChanged && alias) aliasActualizados++;
               usuariosActualizados++;
             }
@@ -838,6 +854,11 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
       let nextAsigId = store.asignaciones_licencia.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
       let nextMovId = store.movimientos_licencia.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
       const localUserByEmail = new Map(store.usuarios_m365.map(u => [u.email.toLowerCase(), u]));
+      const localUserByObjectId = new Map(
+        store.usuarios_m365
+          .filter(u => u.m365_object_id && String(u.m365_object_id).trim() !== '')
+          .map(u => [String(u.m365_object_id).toLowerCase(), u])
+      );
       const localActiveAsigsByUser = new Map();
       for (const a of store.asignaciones_licencia) {
         if (a.estado !== 'ACTIVA') continue;
@@ -893,7 +914,8 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           if (cupo) targetCupoIds.add(cupo.id);
         }
 
-        let dbUser = localUserByEmail.get(upn);
+        const guObjId = String(gu.id || '').trim().toLowerCase();
+        let dbUser = (guObjId && localUserByObjectId.get(guObjId)) || localUserByEmail.get(upn);
         if (!dbUser) {
           const rawUnitHint = [gu.officeLocation, gu.department, gu.companyName].filter(Boolean).join(' ');
           const estId = resolveEstablecimientoId(rawUnitHint, domObj.sector, store.establecimientos);
@@ -918,18 +940,25 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           };
           store.usuarios_m365.unshift(dbUser);
           localUserByEmail.set(upn, dbUser);
+          if (guObjId) localUserByObjectId.set(guObjId, dbUser);
           usuariosNuevos++;
           if (alias) aliasActualizados++;
         } else {
           const newAlias = alias || dbUser.email_alias || '';
+          const emailChanged = upn !== String(dbUser.email || '').toLowerCase();
+          const domChanged = domObj.id !== dbUser.dominio_id;
           const aliasChanged = newAlias !== (dbUser.email_alias || '');
           const statusChanged = estadoCuenta !== dbUser.estado_cuenta;
           const objIdChanged = gu.id && gu.id !== dbUser.m365_object_id;
-          if (aliasChanged || statusChanged || objIdChanged) {
+          if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged) {
+            dbUser.email = upn;
+            dbUser.dominio_id = domObj.id;
             dbUser.email_alias = newAlias;
             dbUser.estado_cuenta = estadoCuenta;
             dbUser.m365_object_id = gu.id || dbUser.m365_object_id || '';
             dbUser.updated_at = nowIso;
+            localUserByEmail.set(upn, dbUser);
+            if (guObjId) localUserByObjectId.set(guObjId, dbUser);
             if (aliasChanged && alias) aliasActualizados++;
             usuariosActualizados++;
           }
