@@ -23,7 +23,9 @@ const {
 } = require('./db');
 const {
   parseWorkbookToNormalizedUsers,
-  bulkImportNormalizedUsers
+  bulkImportNormalizedUsers,
+  isExportedNominaWorkbook,
+  bulkUpdateFromExportedNomina
 } = require('./excelParser');
 const {
   getSyncConfig,
@@ -2580,6 +2582,31 @@ app.post('/api/import-export/usuarios', requireAuth, requireWriteAccess, upload.
     const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
     const state = await getFullState();
     const pool = getPool();
+
+    // Si el archivo tiene el formato exportado por nuestro sistema (columna Correo_M365), ejecutar Actualización Masiva
+    if (isExportedNominaWorkbook(XLSX, wb)) {
+      const upd = await bulkUpdateFromExportedNomina({
+        XLSX,
+        wb,
+        state,
+        pool,
+        isPg: isPgAvailable(),
+        readLocalStore,
+        writeLocalStore
+      });
+      invalidateStateCache();
+      return res.json({
+        status: 'ok',
+        message: `Actualización masiva completada: ${upd.actualizados} cuenta(s) actualizadas por Correo M365, ${upd.omitidos} fila(s) omitidas.`,
+        resumen: {
+          creados: 0,
+          actualizados: upd.actualizados,
+          asignados: 0,
+          omitidos: upd.omitidos,
+          errores: upd.errores.slice(0, 30)
+        }
+      });
+    }
 
     const parsed = parseWorkbookToNormalizedUsers(XLSX, wb, state);
     if (!parsed.registrosNormalizados || parsed.registrosNormalizados.length === 0) {

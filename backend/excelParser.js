@@ -1002,6 +1002,190 @@ async function bulkImportNormalizedUsers({
   return { creados, asignados, omitidos, errores, actualizadosAlias: existingToUpdateAlias.length };
 }
 
+/**
+ * Detecta si un archivo Excel corresponde al formato exportado por nuestro propio sistema
+ * (Nomina_Usuarios_Licencias_M365_CMDS.xlsx / Actualiza_cuentas_educacion_365.xlsx)
+ * que contiene la columna `Correo_M365` para Actualización Masiva por correo.
+ */
+function isExportedNominaWorkbook(XLSX, wb) {
+  if (!wb || !wb.SheetNames || wb.SheetNames.length === 0) return false;
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  if (!rows || rows.length === 0) return false;
+  const keys = Object.keys(rows[0]);
+  return keys.includes('Correo_M365');
+}
+
+/**
+ * Actualiza masivamente cuentas existentes haciendo match por `Correo_M365`
+ * (Establecimiento, Cargo, Departamento, Tipo_Cuenta/Tipo_Usuario, RUT, Nombre y Alias)
+ * preservando intactas las licencias y el `m365_object_id`.
+ */
+async function bulkUpdateFromExportedNomina({
+  XLSX,
+  wb,
+  state,
+  pool,
+  isPg,
+  readLocalStore,
+  writeLocalStore
+}) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const nowIso = new Date().toISOString();
+
+  const userByEmail = new Map(state.usuarios_m365.map(u => [u.email.toLowerCase(), u]));
+  const estByName = new Map(state.establecimientos.map(e => [e.nombre.trim().toUpperCase(), e]));
+
+  const updates = [];
+  let omitidos = 0;
+  const errores = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const email = String(r.Correo_M365 || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      omitidos++;
+      continue;
+    }
+
+    const existing = userByEmail.get(email);
+    if (!existing) {
+      omitidos++;
+      errores.push(`Fila ${i + 2}: Correo '${email}' no encontrado en el sistema.`);
+      continue;
+    }
+
+    const domStr = String(r.Dominio || email.split('@')[1] || 'cmds-educacion.cl').trim().toLowerCase();
+    const rawEst = String(r.Establecimiento_Unidad || '').trim();
+    const rawDepto = String(r.Departamento || '').trim();
+    let estId = existing.establecimiento_id;
+
+    if (rawEst && rawEst.toUpperCase() !== 'SIN ESTABLECIMIENTO') {
+      const exactEst = estByName.get(rawEst.toUpperCase());
+      if (exactEst) {
+        estId = exactEst.id;
+      } else {
+        const resolved = resolverEstablecimientoCMDS({
+          texto: rawEst,
+          textosExtra: [rawDepto, String(r.Nombre_Completo || ''), email.split('@')[0]],
+          dominio: domStr,
+          establecimientos: state.establecimientos
+        });
+        if (resolved) estId = resolved.id;
+      }
+    }
+
+    const rawTipo = String(r.Tipo_Usuario || '').trim().toUpperCase();
+    let tipoCuenta = existing.tipo_cuenta || (existing.tipo_usuario === 'MAQUINA' ? 'MAQUINA' : 'PERSONA');
+    let tipoUsuario = existing.tipo_usuario || 'FUNCIONARIO';
+
+    if (rawTipo === 'MAQUINA' || rawTipo === 'MÁQUINA') {
+      tipoCuenta = 'MAQUINA';
+      tipoUsuario = 'MAQUINA';
+    } else if (rawTipo === 'ESTUDIANTE' || rawTipo === 'ALUMNO') {
+      tipoCuenta = 'PERSONA';
+      tipoUsuario = 'ESTUDIANTE';
+    } else if (rawTipo === 'PERSONA' || rawTipo === 'FUNCIONARIO' || rawTipo === 'DOCENTE') {
+      tipoCuenta = 'PERSONA';
+      tipoUsuario = 'FUNCIONARIO';
+    }
+
+    const rut = r.RUT !== undefined && String(r.RUT).trim() !== '' ? String(r.RUT).trim() : (existing.rut || '');
+    const nombreCompleto =
+      r.Nombre_Completo !== undefined && String(r.Nombre_Completo).trim() !== ''
+        ? String(r.Nombre_Completo).trim()
+        : existing.nombre_completo;
+    const emailAlias =
+      r.Correo_Alias_Migracion !== undefined && String(r.Correo_Alias_Migracion).trim() !== ''
+        ? String(r.Correo_Alias_Migracion).trim().toLowerCase()
+        : (existing.email_alias || '');
+    const cargo =
+      r.Cargo !== undefined && String(r.Cargo).trim() !== ''
+        ? String(r.Cargo).trim()
+        : (existing.cargo || '');
+    const departamento =
+      rawDepto !== '' ? rawDepto : (existing.departamento || '');
+
+    updates.push({
+      id: existing.id,
+      email,
+      rut,
+      nombre_completo: nombreCompleto,
+      email_alias: emailAlias,
+      establecimiento_id: estId,
+      cargo,
+      departamento,
+      tipo_cuenta: tipoCuenta,
+      tipo_usuario: tipoUsuario
+    });
+  }
+
+  let actualizados = 0;
+
+  if (isPg && pool) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const u of updates) {
+        await client.query(
+          `UPDATE usuarios_m365
+           SET rut = $1,
+               nombre_completo = $2,
+               email_alias = $3,
+               establecimiento_id = $4,
+               cargo = $5,
+               departamento = $6,
+               tipo_cuenta = $7,
+               tipo_usuario = $8,
+               updated_at = $9
+           WHERE id = $10`,
+          [
+            u.rut,
+            u.nombre_completo,
+            u.email_alias,
+            u.establecimiento_id,
+            u.cargo,
+            u.departamento,
+            u.tipo_cuenta,
+            u.tipo_usuario,
+            nowIso,
+            u.id
+          ]
+        );
+        actualizados++;
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } else {
+    const store = readLocalStore();
+    const localByEmail = new Map(store.usuarios_m365.map(u => [u.email.toLowerCase(), u]));
+    for (const u of updates) {
+      const target = localByEmail.get(u.email);
+      if (target) {
+        target.rut = u.rut;
+        target.nombre_completo = u.nombre_completo;
+        target.email_alias = u.email_alias;
+        target.establecimiento_id = u.establecimiento_id;
+        target.cargo = u.cargo;
+        target.departamento = u.departamento;
+        target.tipo_cuenta = u.tipo_cuenta;
+        target.tipo_usuario = u.tipo_usuario;
+        target.updated_at = nowIso;
+        actualizados++;
+      }
+    }
+    writeLocalStore(store);
+  }
+
+  return { actualizados, omitidos, errores };
+}
+
 module.exports = {
   normalizarTexto,
   limpiarLocalPartEmail,
@@ -1009,5 +1193,7 @@ module.exports = {
   resolverEstablecimientoCMDS,
   resolverLicenciaCMDS,
   parseWorkbookToNormalizedUsers,
-  bulkImportNormalizedUsers
+  bulkImportNormalizedUsers,
+  isExportedNominaWorkbook,
+  bulkUpdateFromExportedNomina
 };
