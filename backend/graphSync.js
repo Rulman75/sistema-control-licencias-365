@@ -693,10 +693,11 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             usuariosNuevos++;
             if (alias) aliasActualizados++;
           } else {
-            // Actualizar correo/dominio (si migró de @cmds.cl a @cmds-salud.cl), alias, cargo, departamento, establecimiento, m365_object_id o estado
+            // Actualizar correo/dominio (si migró de @cmds.cl a @cmds-salud.cl), nombre, alias, cargo, departamento, establecimiento, m365_object_id o estado
             const newAlias = alias || dbUser.email_alias || '';
             const newCargo = (gu.jobTitle && String(gu.jobTitle).trim()) || dbUser.cargo || '';
             const newDepto = (gu.department && String(gu.department).trim()) || dbUser.departamento || '';
+            const newNombre = fullName || dbUser.nombre_completo;
             const emailChanged = upn !== String(dbUser.email || '').toLowerCase();
             const domChanged = domObj.id !== dbUser.dominio_id;
             const aliasChanged = newAlias !== (dbUser.email_alias || '');
@@ -704,6 +705,7 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             const objIdChanged = gu.id && gu.id !== dbUser.m365_object_id;
             const cargoChanged = newCargo !== (dbUser.cargo || '');
             const deptoChanged = newDepto !== (dbUser.departamento || '');
+            const nombreChanged = newNombre !== dbUser.nombre_completo;
             let newEstId = dbUser.establecimiento_id;
             if (domChanged || (deptoChanged && gu.department)) {
               const rawUnitHint = [gu.officeLocation, gu.department, gu.companyName].filter(Boolean).join(' ');
@@ -711,7 +713,7 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             }
             const estChanged = newEstId !== dbUser.establecimiento_id;
 
-            if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged || cargoChanged || deptoChanged || estChanged) {
+            if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged || cargoChanged || deptoChanged || estChanged || nombreChanged) {
               await client.query(
                 `UPDATE usuarios_m365
                  SET email = $1,
@@ -722,9 +724,12 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
                      cargo = $6,
                      departamento = $7,
                      establecimiento_id = $8,
-                     updated_at = $9
-                 WHERE id = $10`,
-                [upn, domObj.id, newAlias, estadoCuenta, gu.id || dbUser.m365_object_id || '', newCargo, newDepto, newEstId, nowIso, dbUser.id]
+                     nombre_completo = $9,
+                     nombres = $10,
+                     apellidos = $11,
+                     updated_at = $12
+                 WHERE id = $13`,
+                [upn, domObj.id, newAlias, estadoCuenta, gu.id || dbUser.m365_object_id || '', newCargo, newDepto, newEstId, newNombre, nombres, apellidos, nowIso, dbUser.id]
               );
               dbUser.email = upn;
               dbUser.dominio_id = domObj.id;
@@ -732,6 +737,7 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
               dbUser.cargo = newCargo;
               dbUser.departamento = newDepto;
               dbUser.establecimiento_id = newEstId;
+              dbUser.nombre_completo = newNombre;
               userByEmail.set(upn, dbUser);
               if (guObjId) userByObjectId.set(guObjId, dbUser);
               if (aliasChanged && alias) aliasActualizados++;
@@ -963,6 +969,7 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           const newAlias = alias || dbUser.email_alias || '';
           const newCargo = (gu.jobTitle && String(gu.jobTitle).trim()) || dbUser.cargo || '';
           const newDepto = (gu.department && String(gu.department).trim()) || dbUser.departamento || '';
+          const newNombre = fullName || dbUser.nombre_completo;
           const emailChanged = upn !== String(dbUser.email || '').toLowerCase();
           const domChanged = domObj.id !== dbUser.dominio_id;
           const aliasChanged = newAlias !== (dbUser.email_alias || '');
@@ -970,13 +977,14 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           const objIdChanged = gu.id && gu.id !== dbUser.m365_object_id;
           const cargoChanged = newCargo !== (dbUser.cargo || '');
           const deptoChanged = newDepto !== (dbUser.departamento || '');
+          const nombreChanged = newNombre !== dbUser.nombre_completo;
           let newEstId = dbUser.establecimiento_id;
           if (domChanged || (deptoChanged && gu.department)) {
             const rawUnitHint = [gu.officeLocation, gu.department, gu.companyName].filter(Boolean).join(' ');
             newEstId = resolveEstablecimientoId(rawUnitHint, domObj.sector, store.establecimientos);
           }
           const estChanged = newEstId !== dbUser.establecimiento_id;
-          if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged || cargoChanged || deptoChanged || estChanged) {
+          if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged || cargoChanged || deptoChanged || estChanged || nombreChanged) {
             dbUser.email = upn;
             dbUser.dominio_id = domObj.id;
             dbUser.email_alias = newAlias;
@@ -985,6 +993,9 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             dbUser.cargo = newCargo;
             dbUser.departamento = newDepto;
             dbUser.establecimiento_id = newEstId;
+            dbUser.nombre_completo = newNombre;
+            dbUser.nombres = nombres;
+            dbUser.apellidos = apellidos;
             dbUser.updated_at = nowIso;
             localUserByEmail.set(upn, dbUser);
             if (guObjId) localUserByObjectId.set(guObjId, dbUser);
