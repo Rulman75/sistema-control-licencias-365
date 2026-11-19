@@ -464,25 +464,22 @@ function mapGraphSkuToInternalCode(skuPartNumber) {
   ) {
     return 'M365_BUS_BASIC';
   }
-  // Office 365 A3 Faculty
+  // Office 365 A3 Faculty (SOLO A3 real — NO mezclar con A1 antigua STANDARDWOFFPACK_FACULTY)
   if (
     up.includes('A3_FACULTY') ||
     up === 'M365EDU_A3_FACULTY' ||
-    up === 'ENTERPRISEPACKPLUS_FACULTY' ||
-    up === 'STANDARDWOFFPACK_FACULTY'
+    up === 'ENTERPRISEPACKPLUS_FACULTY'
   ) {
     return 'O365_A3_FACULTY';
   }
-  // Office 365 A3 Student
+  // Office 365 A3 Student (SOLO A3 real — NO mezclar con A1 antigua STANDARDWOFFPACK_STUDENT)
   if (
     up.includes('STUUSEBNFT') ||
     up.includes('A3_STU') ||
     up.includes('A3_STUDENT') ||
     up === 'M365EDU_A3_STUUSEBNFT' ||
     up === 'ENTERPRISEPACKPLUS_STUUSEBNFT' ||
-    up === 'ENTERPRISEPACKPLUS_STUDENT' ||
-    up === 'STANDARDWOFFPACK_STUDENT' ||
-    up === 'STANDARDWOFFPACK_IW_STUDENT'
+    up === 'ENTERPRISEPACKPLUS_STUDENT'
   ) {
     return 'O365_A3_STUDENT';
   }
@@ -634,22 +631,21 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             skuHint: assignedRawSkus.map(mapGraphSkuToInternalCode).filter(Boolean)[0] || null
           });
 
-          // Determinar cupos de licencia que corresponden según lo asignado en Microsoft 365
+          // Determinar cupos de licencia exactos según lo realmente asignado en Microsoft 365
           const targetCupoIds = new Set();
           for (const rawSkuPart of assignedRawSkus) {
-            let internalCode = mapGraphSkuToInternalCode(rawSkuPart);
+            const internalCode = mapGraphSkuToInternalCode(rawSkuPart);
             if (!internalCode) continue;
-
-            // Regla CMDS Educación: Máquinas en @cmds-educacion.cl usan pool A3 Student (cupo_licencia_id = 6)
-            if (domainStr === 'cmds-educacion.cl' && clasificacion.tipo_cuenta === 'MAQUINA') {
-              internalCode = 'O365_A3_STUDENT';
-            }
 
             const tipoLic = tipoByCode.get(internalCode);
             if (!tipoLic) continue;
 
-            // Solo asignar cupos pertenecientes al mismo dominio de la cuenta
-            const cupo = cupoByDomAndTipo.get(`${domObj.id}_${tipoLic.id}`);
+            // 1) Coincidencia exacta por dominio + tipo de licencia (clave para E3 en cmds.cl vs cmds-salud.cl)
+            let cupo = cupoByDomAndTipo.get(`${domObj.id}_${tipoLic.id}`);
+            // 2) Para SKUs de pool único (A3 Faculty, A3 Student, E1, Business Basic), contabilizar aunque la cuenta siga con correo @cmds.cl pendiente de migración
+            if (!cupo && internalCode !== 'O365_E3') {
+              cupo = state.cupos_licencia.find(c => c.tipo_licencia_id === tipoLic.id);
+            }
             if (cupo) {
               targetCupoIds.add(cupo.id);
             }
@@ -886,14 +882,14 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
 
         const targetCupoIds = new Set();
         for (const rawSkuPart of assignedRawSkus) {
-          let internalCode = mapGraphSkuToInternalCode(rawSkuPart);
+          const internalCode = mapGraphSkuToInternalCode(rawSkuPart);
           if (!internalCode) continue;
-          if (domainStr === 'cmds-educacion.cl' && clasificacion.tipo_cuenta === 'MAQUINA') {
-            internalCode = 'O365_A3_STUDENT';
-          }
           const tipoLic = tipoByCode.get(internalCode);
           if (!tipoLic) continue;
-          const cupo = cupoByDomAndTipo.get(`${domObj.id}_${tipoLic.id}`);
+          let cupo = cupoByDomAndTipo.get(`${domObj.id}_${tipoLic.id}`);
+          if (!cupo && internalCode !== 'O365_E3') {
+            cupo = store.cupos_licencia.find(c => c.tipo_licencia_id === tipoLic.id);
+          }
           if (cupo) targetCupoIds.add(cupo.id);
         }
 
