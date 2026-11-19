@@ -22,6 +22,7 @@ param(
   [switch]$Simulacion,
   [string]$SoloUsuario = "",
   [string]$LicenciaPiloto = "E3",
+  [int]$Saltar = 0,
   [int]$Limite = 0,
   [string]$SalidaLog = "$env:USERPROFILE\Desktop\Resultado_Migracion_Salud_M365.csv",
   [ValidateSet("ALL", "EXCHANGE", "GRAPH")]
@@ -58,6 +59,7 @@ if ($Fase -eq "ALL") {
     "-File", $PSCommandPath,
     "-CsvPath", $CsvPath,
     "-LicenciaPiloto", $LicenciaPiloto,
+    "-Saltar", "$Saltar",
     "-Limite", "$Limite",
     "-SalidaLog", $SalidaLog
   )
@@ -107,6 +109,9 @@ if ($SoloUsuario -ne "") {
     )
     Write-Host "[INFO] Usuario piloto '$filtro' -> '$localPart@cmds-salud.cl' con licencia $($LicenciaPiloto.ToUpper())." -ForegroundColor Yellow
   }
+}
+if ($Saltar -gt 0) {
+  $registros = @($registros | Select-Object -Skip $Saltar)
 }
 if ($Limite -gt 0 -and $registros.Count -gt $Limite) {
   $registros = @($registros | Select-Object -First $Limite)
