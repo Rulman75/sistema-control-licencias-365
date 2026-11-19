@@ -693,15 +693,25 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             usuariosNuevos++;
             if (alias) aliasActualizados++;
           } else {
-            // Actualizar correo/dominio (si migró de @cmds.cl a @cmds-salud.cl), alias, m365_object_id o estado
+            // Actualizar correo/dominio (si migró de @cmds.cl a @cmds-salud.cl), alias, cargo, departamento, establecimiento, m365_object_id o estado
             const newAlias = alias || dbUser.email_alias || '';
+            const newCargo = (gu.jobTitle && String(gu.jobTitle).trim()) || dbUser.cargo || '';
+            const newDepto = (gu.department && String(gu.department).trim()) || dbUser.departamento || '';
             const emailChanged = upn !== String(dbUser.email || '').toLowerCase();
             const domChanged = domObj.id !== dbUser.dominio_id;
             const aliasChanged = newAlias !== (dbUser.email_alias || '');
             const statusChanged = estadoCuenta !== dbUser.estado_cuenta;
             const objIdChanged = gu.id && gu.id !== dbUser.m365_object_id;
+            const cargoChanged = newCargo !== (dbUser.cargo || '');
+            const deptoChanged = newDepto !== (dbUser.departamento || '');
+            let newEstId = dbUser.establecimiento_id;
+            if (domChanged || (deptoChanged && gu.department)) {
+              const rawUnitHint = [gu.officeLocation, gu.department, gu.companyName].filter(Boolean).join(' ');
+              newEstId = resolveEstablecimientoId(rawUnitHint, domObj.sector, state.establecimientos);
+            }
+            const estChanged = newEstId !== dbUser.establecimiento_id;
 
-            if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged) {
+            if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged || cargoChanged || deptoChanged || estChanged) {
               await client.query(
                 `UPDATE usuarios_m365
                  SET email = $1,
@@ -709,13 +719,19 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
                      email_alias = $3,
                      estado_cuenta = $4,
                      m365_object_id = $5,
-                     updated_at = $6
-                 WHERE id = $7`,
-                [upn, domObj.id, newAlias, estadoCuenta, gu.id || dbUser.m365_object_id || '', nowIso, dbUser.id]
+                     cargo = $6,
+                     departamento = $7,
+                     establecimiento_id = $8,
+                     updated_at = $9
+                 WHERE id = $10`,
+                [upn, domObj.id, newAlias, estadoCuenta, gu.id || dbUser.m365_object_id || '', newCargo, newDepto, newEstId, nowIso, dbUser.id]
               );
               dbUser.email = upn;
               dbUser.dominio_id = domObj.id;
               dbUser.email_alias = newAlias;
+              dbUser.cargo = newCargo;
+              dbUser.departamento = newDepto;
+              dbUser.establecimiento_id = newEstId;
               userByEmail.set(upn, dbUser);
               if (guObjId) userByObjectId.set(guObjId, dbUser);
               if (aliasChanged && alias) aliasActualizados++;
@@ -945,17 +961,30 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           if (alias) aliasActualizados++;
         } else {
           const newAlias = alias || dbUser.email_alias || '';
+          const newCargo = (gu.jobTitle && String(gu.jobTitle).trim()) || dbUser.cargo || '';
+          const newDepto = (gu.department && String(gu.department).trim()) || dbUser.departamento || '';
           const emailChanged = upn !== String(dbUser.email || '').toLowerCase();
           const domChanged = domObj.id !== dbUser.dominio_id;
           const aliasChanged = newAlias !== (dbUser.email_alias || '');
           const statusChanged = estadoCuenta !== dbUser.estado_cuenta;
           const objIdChanged = gu.id && gu.id !== dbUser.m365_object_id;
-          if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged) {
+          const cargoChanged = newCargo !== (dbUser.cargo || '');
+          const deptoChanged = newDepto !== (dbUser.departamento || '');
+          let newEstId = dbUser.establecimiento_id;
+          if (domChanged || (deptoChanged && gu.department)) {
+            const rawUnitHint = [gu.officeLocation, gu.department, gu.companyName].filter(Boolean).join(' ');
+            newEstId = resolveEstablecimientoId(rawUnitHint, domObj.sector, store.establecimientos);
+          }
+          const estChanged = newEstId !== dbUser.establecimiento_id;
+          if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged || cargoChanged || deptoChanged || estChanged) {
             dbUser.email = upn;
             dbUser.dominio_id = domObj.id;
             dbUser.email_alias = newAlias;
             dbUser.estado_cuenta = estadoCuenta;
             dbUser.m365_object_id = gu.id || dbUser.m365_object_id || '';
+            dbUser.cargo = newCargo;
+            dbUser.departamento = newDepto;
+            dbUser.establecimiento_id = newEstId;
             dbUser.updated_at = nowIso;
             localUserByEmail.set(upn, dbUser);
             if (guObjId) localUserByObjectId.set(guObjId, dbUser);

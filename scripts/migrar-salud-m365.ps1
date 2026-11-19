@@ -220,14 +220,25 @@ if ($Fase -eq "GRAPH") {
         continue
       }
 
-      # Actualizar UPN y UsageLocation = CL
+      # Actualizar UPN, UsageLocation = CL, Cargo (JobTitle) y Departamento (Department) en una sola llamada
+      $updateBody = @{}
       if ($mgUser.UserPrincipalName.ToLower() -ne $row.CorreoNuevo.ToLower()) {
-        Update-MgUser -UserId $mgUser.Id -BodyParameter @{
-          UserPrincipalName = $row.CorreoNuevo
-          UsageLocation     = "CL"
-        }
-      } elseif (-not $mgUser.UsageLocation) {
-        Update-MgUser -UserId $mgUser.Id -UsageLocation "CL"
+        $updateBody["UserPrincipalName"] = $row.CorreoNuevo
+      }
+      if (-not $mgUser.UsageLocation) {
+        $updateBody["UsageLocation"] = "CL"
+      }
+      $cargoLimpio = if ($row.Cargo) { $row.Cargo.Trim() } else { "" }
+      if ($cargoLimpio -ne "") {
+        $updateBody["JobTitle"] = $cargoLimpio
+      }
+      $deptoLimpio = if ($row.Departamento) { $row.Departamento.Trim() } else { "" }
+      if ($deptoLimpio -ne "" -and $deptoLimpio -ne "Piloto") {
+        $updateBody["Department"] = $deptoLimpio
+      }
+
+      if ($updateBody.Count -gt 0) {
+        Update-MgUser -UserId $mgUser.Id -BodyParameter $updateBody
       }
 
       # Intercambio atómico de licencia (+E3/E1 y -A1/ExchangeStudent en UNA sola llamada)
