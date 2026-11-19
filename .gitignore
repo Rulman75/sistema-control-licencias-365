@@ -5,6 +5,7 @@ frontend/dist/
 backend/data/store.json
 backend/data/m365_cert.json
 scripts/migracion_salud_preparada.csv
+scripts/migracion_educacion_preparada.csv
 .env
 backend/.env
 *.log
