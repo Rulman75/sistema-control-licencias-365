@@ -220,7 +220,7 @@ if ($Fase -eq "GRAPH") {
         continue
       }
 
-      # Actualizar UPN, UsageLocation = CL, DisplayName, GivenName (First name), Surname (Last name), Cargo (JobTitle) y Departamento (Department)
+      # Actualizar UPN, UsageLocation = CL, DisplayName, GivenName, Surname, JobTitle, Department, OfficeLocation, City, State, PostalCode y Country
       $updateBody = @{}
       if ($mgUser.UserPrincipalName.ToLower() -ne $row.CorreoNuevo.ToLower()) {
         $updateBody["UserPrincipalName"] = $row.CorreoNuevo
@@ -247,6 +247,26 @@ if ($Fase -eq "GRAPH") {
       $deptoLimpio = if ($row.Departamento) { $row.Departamento.Trim() } else { "" }
       if ($deptoLimpio -ne "" -and $deptoLimpio -ne "Piloto") {
         $updateBody["Department"] = $deptoLimpio
+      }
+      $officeLimpio = if ($row.Office) { $row.Office.Trim() } else { "" }
+      if ($officeLimpio -ne "") {
+        $updateBody["OfficeLocation"] = $officeLimpio
+      }
+      $cityLimpio = if ($row.City) { $row.City.Trim() } else { "" }
+      if ($cityLimpio -ne "") {
+        $updateBody["City"] = $cityLimpio
+      }
+      $stateLimpio = if ($row.StateOrProvince) { $row.StateOrProvince.Trim() } else { "" }
+      if ($stateLimpio -ne "") {
+        $updateBody["State"] = $stateLimpio
+      }
+      $postalLimpio = if ($row.PostalCode) { $row.PostalCode.Trim() } else { "" }
+      if ($postalLimpio -ne "") {
+        $updateBody["PostalCode"] = $postalLimpio
+      }
+      $countryLimpio = if ($row.CountryOrRegion) { $row.CountryOrRegion.Trim() } else { "" }
+      if ($countryLimpio -ne "") {
+        $updateBody["Country"] = $countryLimpio
       }
 
       if ($updateBody.Count -gt 0) {
