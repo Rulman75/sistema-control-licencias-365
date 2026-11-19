@@ -220,7 +220,7 @@ if ($Fase -eq "GRAPH") {
         continue
       }
 
-      # Actualizar UPN, UsageLocation = CL, DisplayName, Cargo (JobTitle) y Departamento (Department) en una sola llamada
+      # Actualizar UPN, UsageLocation = CL, DisplayName, GivenName (First name), Surname (Last name), Cargo (JobTitle) y Departamento (Department)
       $updateBody = @{}
       if ($mgUser.UserPrincipalName.ToLower() -ne $row.CorreoNuevo.ToLower()) {
         $updateBody["UserPrincipalName"] = $row.CorreoNuevo
@@ -229,8 +229,16 @@ if ($Fase -eq "GRAPH") {
         $updateBody["UsageLocation"] = "CL"
       }
       $displayLimpio = if ($row.DisplayName) { $row.DisplayName.Trim() } else { "" }
-      if ($displayLimpio -ne "" -and -not $displayLimpio.Contains("@") -and $mgUser.DisplayName -ne $displayLimpio) {
+      if ($displayLimpio -ne "" -and -not $displayLimpio.Contains("@")) {
         $updateBody["DisplayName"] = $displayLimpio
+      }
+      $firstLimpio = if ($row.FirstName) { $row.FirstName.Trim() } else { "" }
+      if ($firstLimpio -ne "") {
+        $updateBody["GivenName"] = $firstLimpio
+      }
+      $lastLimpio = if ($row.LastName) { $row.LastName.Trim() } else { "" }
+      if ($lastLimpio -ne "") {
+        $updateBody["Surname"] = $lastLimpio
       }
       $cargoLimpio = if ($row.Cargo) { $row.Cargo.Trim() } else { "" }
       if ($cargoLimpio -ne "") {
