@@ -13,7 +13,8 @@ import {
   Building2,
   CheckCircle2,
   AlertTriangle,
-  Download
+  Download,
+  Lock
 } from 'lucide-react';
 import { api, UserSession, canUserWrite } from '../api';
 
@@ -33,7 +34,7 @@ export default function GestionUsuarios() {
   const [filtroDominio, setFiltroDominio] = useState(searchParams.get('dominio_id') || '');
   const [filtroTipoLic, setFiltroTipoLic] = useState(searchParams.get('tipo_licencia_id') || '');
   const [filtroEstablecimiento, setFiltroEstablecimiento] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState(searchParams.get('estado_cuenta') || '');
   const [filtroTipoUsuario, setFiltroTipoUsuario] = useState('');
 
   // Notificación global
@@ -539,6 +540,8 @@ export default function GestionUsuarios() {
               <option value="">Estado: Todos</option>
               <option value="ACTIVO">Activos</option>
               <option value="BAJA">En Baja</option>
+              <option value="BLOQUEADA">🔒 Bloqueadas en M365</option>
+              <option value="BLOQUEADA_CON_LICENCIA">⚠ Bloqueadas con Licencia</option>
             </select>
             <button
               type="button"
@@ -755,15 +758,37 @@ export default function GestionUsuarios() {
                       </td>
 
                       <td className="py-3 px-4 text-center">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                            u.estado_cuenta === 'ACTIVO'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}
-                        >
-                          {u.estado_cuenta}
-                        </span>
+                        <div className="inline-flex flex-col items-center gap-1">
+                          {u.cuenta_bloqueada ? (
+                            <>
+                              <span
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-red-100 text-red-800 border border-red-200"
+                                title="Inicio de sesión bloqueado en Microsoft 365 (accountEnabled = false)"
+                              >
+                                <Lock className="w-2.5 h-2.5" />
+                                BLOQUEADA
+                              </span>
+                              {u.licencias_activas && u.licencias_activas.length > 0 && (
+                                <span
+                                  className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200"
+                                  title="Cuenta bloqueada que aún consume licencia en Microsoft 365"
+                                >
+                                  ⚠ Con licencia
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                                u.estado_cuenta === 'ACTIVO'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {u.estado_cuenta}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3 px-4 text-right">

@@ -621,7 +621,8 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           const apellidos = surname || split.apellidos;
 
           const alias = extractSecondaryAlias(upn, gu.mail, gu.proxyAddresses);
-          const estadoCuenta = gu.accountEnabled === false ? 'BAJA' : 'ACTIVO';
+          const cuentaBloqueada = gu.accountEnabled === false;
+          const estadoCuenta = cuentaBloqueada ? 'BAJA' : 'ACTIVO';
 
           // Mapear licencias asignadas en Microsoft 365 para este usuario
           const assignedRawSkus = (gu.assignedLicenses || [])
@@ -666,8 +667,8 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
 
             const insRes = await client.query(
               `INSERT INTO usuarios_m365
-               (rut, nombres, apellidos, nombre_completo, email, email_alias, m365_object_id, dominio_id, establecimiento_id, cargo, departamento, tipo_cuenta, tipo_usuario, estado_cuenta, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
+               (rut, nombres, apellidos, nombre_completo, email, email_alias, m365_object_id, dominio_id, establecimiento_id, cargo, departamento, tipo_cuenta, tipo_usuario, estado_cuenta, cuenta_bloqueada, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
                RETURNING *`,
               [
                 '',
@@ -684,6 +685,7 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
                 clasificacion.tipo_cuenta,
                 clasificacion.tipo_usuario,
                 estadoCuenta,
+                cuentaBloqueada,
                 nowIso
               ]
             );
@@ -702,6 +704,7 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             const domChanged = domObj.id !== dbUser.dominio_id;
             const aliasChanged = newAlias !== (dbUser.email_alias || '');
             const statusChanged = estadoCuenta !== dbUser.estado_cuenta;
+            const bloqueadaChanged = Boolean(cuentaBloqueada) !== Boolean(dbUser.cuenta_bloqueada);
             const objIdChanged = gu.id && gu.id !== dbUser.m365_object_id;
             const cargoChanged = newCargo !== (dbUser.cargo || '');
             const deptoChanged = newDepto !== (dbUser.departamento || '');
@@ -713,27 +716,30 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             }
             const estChanged = newEstId !== dbUser.establecimiento_id;
 
-            if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged || cargoChanged || deptoChanged || estChanged || nombreChanged) {
+            if (emailChanged || domChanged || aliasChanged || statusChanged || bloqueadaChanged || objIdChanged || cargoChanged || deptoChanged || estChanged || nombreChanged) {
               await client.query(
                 `UPDATE usuarios_m365
                  SET email = $1,
                      dominio_id = $2,
                      email_alias = $3,
                      estado_cuenta = $4,
-                     m365_object_id = $5,
-                     cargo = $6,
-                     departamento = $7,
-                     establecimiento_id = $8,
-                     nombre_completo = $9,
-                     nombres = $10,
-                     apellidos = $11,
-                     updated_at = $12
-                 WHERE id = $13`,
-                [upn, domObj.id, newAlias, estadoCuenta, gu.id || dbUser.m365_object_id || '', newCargo, newDepto, newEstId, newNombre, nombres, apellidos, nowIso, dbUser.id]
+                     cuenta_bloqueada = $5,
+                     m365_object_id = $6,
+                     cargo = $7,
+                     departamento = $8,
+                     establecimiento_id = $9,
+                     nombre_completo = $10,
+                     nombres = $11,
+                     apellidos = $12,
+                     updated_at = $13
+                 WHERE id = $14`,
+                [upn, domObj.id, newAlias, estadoCuenta, cuentaBloqueada, gu.id || dbUser.m365_object_id || '', newCargo, newDepto, newEstId, newNombre, nombres, apellidos, nowIso, dbUser.id]
               );
               dbUser.email = upn;
               dbUser.dominio_id = domObj.id;
               dbUser.email_alias = newAlias;
+              dbUser.estado_cuenta = estadoCuenta;
+              dbUser.cuenta_bloqueada = cuentaBloqueada;
               dbUser.cargo = newCargo;
               dbUser.departamento = newDepto;
               dbUser.establecimiento_id = newEstId;
@@ -909,7 +915,8 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
         const nombres = givenName || split.nombres;
         const apellidos = surname || split.apellidos;
         const alias = extractSecondaryAlias(upn, gu.mail, gu.proxyAddresses);
-        const estadoCuenta = gu.accountEnabled === false ? 'BAJA' : 'ACTIVO';
+        const cuentaBloqueada = gu.accountEnabled === false;
+        const estadoCuenta = cuentaBloqueada ? 'BAJA' : 'ACTIVO';
 
         const assignedRawSkus = (gu.assignedLicenses || [])
           .map(al => skuPartById.get(String(al.skuId || '').toLowerCase()) || '')
@@ -957,6 +964,7 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             tipo_cuenta: clasificacion.tipo_cuenta,
             tipo_usuario: clasificacion.tipo_usuario,
             estado_cuenta: estadoCuenta,
+            cuenta_bloqueada: cuentaBloqueada,
             created_at: nowIso,
             updated_at: nowIso
           };
@@ -974,6 +982,7 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
           const domChanged = domObj.id !== dbUser.dominio_id;
           const aliasChanged = newAlias !== (dbUser.email_alias || '');
           const statusChanged = estadoCuenta !== dbUser.estado_cuenta;
+          const bloqueadaChanged = Boolean(cuentaBloqueada) !== Boolean(dbUser.cuenta_bloqueada);
           const objIdChanged = gu.id && gu.id !== dbUser.m365_object_id;
           const cargoChanged = newCargo !== (dbUser.cargo || '');
           const deptoChanged = newDepto !== (dbUser.departamento || '');
@@ -984,11 +993,12 @@ async function runMicrosoft365Sync({ trigger = 'MANUAL', operatorUsername = 'Mic
             newEstId = resolveEstablecimientoId(rawUnitHint, domObj.sector, store.establecimientos);
           }
           const estChanged = newEstId !== dbUser.establecimiento_id;
-          if (emailChanged || domChanged || aliasChanged || statusChanged || objIdChanged || cargoChanged || deptoChanged || estChanged || nombreChanged) {
+          if (emailChanged || domChanged || aliasChanged || statusChanged || bloqueadaChanged || objIdChanged || cargoChanged || deptoChanged || estChanged || nombreChanged) {
             dbUser.email = upn;
             dbUser.dominio_id = domObj.id;
             dbUser.email_alias = newAlias;
             dbUser.estado_cuenta = estadoCuenta;
+            dbUser.cuenta_bloqueada = cuentaBloqueada;
             dbUser.m365_object_id = gu.id || dbUser.m365_object_id || '';
             dbUser.cargo = newCargo;
             dbUser.departamento = newDepto;

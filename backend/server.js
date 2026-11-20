@@ -717,11 +717,19 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
           disponibles: disponiblesEstudiantes,
           porcentaje_uso: totalEstudiantes > 0 ? Number(((asignadasEstudiantes / totalEstudiantes) * 100).toFixed(4)) : 0
         },
-        usuarios: {
-          total: usuarios_m365.length,
-          activos: usuarios_m365.filter(u => u.estado_cuenta === 'ACTIVO').length,
-          bajas: usuarios_m365.filter(u => u.estado_cuenta === 'BAJA').length
-        },
+        usuarios: (() => {
+          const activeUserIdsWithLic = new Set(
+            asignaciones_licencia.filter(a => a.estado === 'ACTIVA').map(a => a.usuario_id)
+          );
+          const bloqueadasList = usuarios_m365.filter(u => Boolean(u.cuenta_bloqueada));
+          return {
+            total: usuarios_m365.length,
+            activos: usuarios_m365.filter(u => u.estado_cuenta === 'ACTIVO').length,
+            bajas: usuarios_m365.filter(u => u.estado_cuenta === 'BAJA').length,
+            bloqueadas: bloqueadasList.length,
+            bloqueadas_con_licencia: bloqueadasList.filter(u => activeUserIdsWithLic.has(u.id)).length
+          };
+        })(),
         movimientos: {
           altas: totalAltasHistoricas,
           bajas: totalBajasHistoricas,
@@ -1020,6 +1028,7 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
           tipo_cuenta: tipoCuentaNorm,
           tipo_usuario: u.tipo_usuario,
           estado_cuenta: u.estado_cuenta,
+          cuenta_bloqueada: Boolean(u.cuenta_bloqueada),
           dominio: dom.dominio,
           dominio_sector: dom.sector,
           establecimiento_nombre: est ? est.nombre : 'Sin Establecimiento',
@@ -1067,7 +1076,15 @@ app.get('/api/usuarios', requireAuth, async (req, res) => {
       if (domNum !== null && u.dominio_id !== domNum) continue;
       if (estNum !== null && u.establecimiento_id !== estNum) continue;
       if (sector && u.dominio_sector !== sector) continue;
-      if (estado_cuenta && u.estado_cuenta !== estado_cuenta) continue;
+      if (estado_cuenta) {
+        if (estado_cuenta === 'BLOQUEADA') {
+          if (!u.cuenta_bloqueada) continue;
+        } else if (estado_cuenta === 'BLOQUEADA_CON_LICENCIA') {
+          if (!u.cuenta_bloqueada || !(u.licencias_activas && u.licencias_activas.length > 0)) continue;
+        } else if (u.estado_cuenta !== estado_cuenta) {
+          continue;
+        }
+      }
       if (tipo_cuenta && u.tipo_cuenta !== tipo_cuenta) continue;
       if (tipo_usuario) {
         const esMaq = u.tipo_cuenta === 'MAQUINA' || u.tipo_usuario === 'MAQUINA';
@@ -2687,6 +2704,7 @@ app.get('/api/import-export/exportar-usuarios', requireAuth, async (req, res) =>
         Tipo_Usuario: u.tipo_usuario,
         Licencias_Activas: activas || 'SIN LICENCIA ACTIVA',
         Estado_Cuenta: u.estado_cuenta,
+        Inicio_Sesion_Bloqueado: u.cuenta_bloqueada ? 'SI' : 'NO',
         Fecha_Registro: u.created_at ? new Date(u.created_at).toLocaleDateString('es-CL') : ''
       };
     });
@@ -2695,7 +2713,7 @@ app.get('/api/import-export/exportar-usuarios', requireAuth, async (req, res) =>
     const ws = XLSX.utils.json_to_sheet(rows);
     ws['!cols'] = [
       { wch: 6 }, { wch: 15 }, { wch: 30 }, { wch: 32 }, { wch: 30 }, { wch: 18 }, { wch: 16 },
-      { wch: 38 }, { wch: 24 }, { wch: 22 }, { wch: 15 }, { wch: 38 }, { wch: 14 }, { wch: 15 }
+      { wch: 38 }, { wch: 24 }, { wch: 22 }, { wch: 15 }, { wch: 38 }, { wch: 14 }, { wch: 24 }, { wch: 15 }
     ];
     XLSX.utils.book_append_sheet(wb, ws, 'NOMINA_USUARIOS_M365');
 

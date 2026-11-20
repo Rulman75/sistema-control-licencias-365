@@ -533,6 +533,7 @@ async function initDatabase() {
         ALTER TABLE usuarios_m365 ADD COLUMN IF NOT EXISTS email_alias VARCHAR(220) DEFAULT '';
         ALTER TABLE usuarios_m365 ADD COLUMN IF NOT EXISTS tipo_cuenta VARCHAR(30) DEFAULT 'PERSONA';
         ALTER TABLE usuarios_m365 ADD COLUMN IF NOT EXISTS m365_object_id VARCHAR(100) DEFAULT '';
+        ALTER TABLE usuarios_m365 ADD COLUMN IF NOT EXISTS cuenta_bloqueada BOOLEAN DEFAULT FALSE;
 
         CREATE TABLE IF NOT EXISTS config_m365_sync (
           id INTEGER PRIMARY KEY DEFAULT 1,

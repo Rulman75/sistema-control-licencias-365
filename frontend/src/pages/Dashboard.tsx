@@ -23,7 +23,8 @@ import {
   Printer,
   RefreshCw,
   GraduationCap,
-  Briefcase
+  Briefcase,
+  Lock
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -179,6 +180,56 @@ export default function Dashboard() {
           >
             Cerrar
           </button>
+        </div>
+      )}
+
+      {(data.kpis?.usuarios?.bloqueadas > 0) && (
+        <div
+          className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            data.kpis.usuarios.bloqueadas_con_licencia > 0
+              ? 'bg-amber-50 border-amber-300 text-amber-950'
+              : 'bg-slate-50 border-slate-200 text-slate-700'
+          }`}
+        >
+          <div className="flex items-center gap-2.5 text-xs">
+            <span className="p-2 rounded-xl bg-red-100 text-red-700 shrink-0">
+              <Lock className="w-4 h-4" />
+            </span>
+            <div>
+              <div className="font-extrabold">
+                Cuentas con inicio de sesión bloqueado en Microsoft 365:{' '}
+                <span className="text-red-700">
+                  {(data.kpis.usuarios.bloqueadas || 0).toLocaleString('es-CL')}
+                </span>
+                {data.kpis.usuarios.bloqueadas_con_licencia > 0 && (
+                  <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-950 font-black">
+                    ⚠ {data.kpis.usuarios.bloqueadas_con_licencia.toLocaleString('es-CL')} aún consumen licencia
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] opacity-80">
+                {data.kpis.usuarios.bloqueadas_con_licencia > 0
+                  ? 'Se detectaron cuentas bloqueadas que mantienen licencias asignadas y pueden ser liberadas para recuperar cupos.'
+                  : 'Ninguna cuenta bloqueada está consumiendo licencias corporativas.'}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {data.kpis.usuarios.bloqueadas_con_licencia > 0 && (
+              <Link
+                to="/usuarios?estado_cuenta=BLOQUEADA_CON_LICENCIA"
+                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition"
+              >
+                Ver con licencia ({data.kpis.usuarios.bloqueadas_con_licencia})
+              </Link>
+            )}
+            <Link
+              to="/usuarios?estado_cuenta=BLOQUEADA"
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-bold transition"
+            >
+              Ver todas bloqueadas
+            </Link>
+          </div>
         </div>
       )}
 
